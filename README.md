@@ -12,7 +12,7 @@ RAVED is a pipeline written in two R Markdown scripts initially developed for re
 * Comparison assignment
 * Differential expression (DE) analysis 
 
-Several freely accessible R packages for microarray data analysis are used in this pipeline. We use GEO dataset GSE4917 as an example and provide two R Markdown templates to reproduec the analysis pipeline and reports for GSE4917. The template_QC_report.Rmd script goes first including the steps of raw data download, phenotype file preparation, and QC. The template_DE_analysis_report.Rmd takes the output from the template_QC_report.Rmd and performs the DE analysis of the comparison of interest. The RMD files and HTML reports for other microarray data used for our integrative analysis of transcriptomic data asthma and glucocorticoid response can be found in the folder microarray.
+Several freely accessible R packages for microarray data analysis are used in this pipeline. We use GEO dataset GSE4917 as an example and provide two R Markdown templates to reproduec the analysis pipeline and reports for GSE4917. The template_QC_report.Rmd script goes first including the steps of raw data download, phenotype file preparation, and QC. The template_DE_analysis_report.Rmd takes the output from the template_QC_report.Rmd and performs the DE analysis of the comparison of interest. The RMD files for other microarray data used for our integrative analysis of transcriptomic data asthma and glucocorticoid response can be found in the folder microarray.
 
 Prerequisite R packages for microarray data analysis include:
 * Data download: GEOquery
@@ -33,13 +33,13 @@ Raw phenotype data derived from GSEMatrix files is first overviewed and then man
 ### QC and outlier detection
 
 The following QC metrics are included in a routine analysis. QC steps of which metrics are used for outlier detection are marked with an asterisk.
-* Boxplots and density plots for raw probe intensities*
+* Boxplots and density plots for raw probe intensities\*
 * RNA degradation plots
-* Density plots for perfect match (PM) and mismatch (MM) probe
-* MA plots*
-* Spatial plots*
-* Boxplots for the normalized unscaled standard error (NUSE) and relative log expression (RLE)*
-* Heatmap and dendrogram for distance between arrays*
+* Density plots for perfect match (PM) and mismatch (MM) probe\*
+* MA plots\*
+* Spatial plots\*
+* Boxplots for the normalized unscaled standard error (NUSE) and relative log expression (RLE)\*
+* Heatmap and dendrogram for distance between arrays\*
 * Principal component analysis (PCA) plots
 
 A hard filter is applied to determine the outliers to remove: a sample which is designated an outlier by more than two methods will be excluded from DE analysis. A column showing whether the sample passes QC is added to the phenotype file. We suggest researchers manually inspect the QC metrics and plots to identify outliers.
@@ -57,7 +57,11 @@ Official gene symbols are annotated to DE results. Plots are automatically gener
 
 ## Description of files in repository
 `template_QC_report.Rmd`: R markdown codes for GSE4917 QC analysis
+
 `template_QC_report.html`: HTML report for GSE4917 QC analysis
+
 `template_DE_analysis_report.Rmd`: R markdown codes for GSE4917 DE analysis
+
 `template_DE_analysis_report.html`: HTML report for GSE4917 DE analysis
-`microarray folder` contains the RMD files and HTML reports for other microarray datasets used for our integrative analysis of transcriptomic data asthma and glucocorticoid response
+
+`microarray folder` contains the RMD files for other microarray datasets used for our integrative analysis of transcriptomic data asthma and glucocorticoid response
