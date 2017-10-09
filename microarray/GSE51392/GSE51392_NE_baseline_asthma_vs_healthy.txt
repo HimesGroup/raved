@@ -1,0 +1,13 @@
+GEO_ID	Subject	Sample	Tissue	Gender	Disease	Disease_des	Treatment	Treatment_des	ScanDate_Group	QC_Pass	Filename
+GSM1244588	2	GSM1244588_2	NE	female	healthy	NA	baseline	NA	2011-05-27	1	GSM1244588_13_F09.CEL.gz
+GSM1244603	3	GSM1244603_3	NE	female	asthma	allergic_asthma	baseline	NA	2011-06-02	1	GSM1244603_26_E09.CEL.gz
+GSM1244608	14	GSM1244608_14	NE	female	asthma	allergic_asthma	baseline	NA	2011-05-27	1	GSM1244608_43_B07.CEL.gz
+GSM1244617	6	GSM1244617_6	NE	female	asthma	allergic_asthma	baseline	NA	2011-05-27	1	GSM1244617_59_C09.CEL.gz
+GSM1244619	7	GSM1244619_7	NE	female	healthy	NA	baseline	NA	2011-06-02	1	GSM1244619_62_D09.CEL.gz
+GSM1244625	9	GSM1244625_9	NE	female	healthy	NA	baseline	NA	2011-06-07	1	GSM1244625_79_A07.CEL.gz
+GSM1244628	1	GSM1244628_1	NE	female	healthy	NA	baseline	NA	2011-06-02	1	GSM1244628_87_E05.CEL.gz
+GSM1244635	8	GSM1244635_8	NE	female	healthy	NA	baseline	NA	2011-05-27	1	GSM1244635_108_E09.CEL.gz
+GSM1244643	4	GSM1244643_4	NE	female	asthma	allergic_asthma	baseline	NA	2011-05-27	1	GSM1244643_126_A09.CEL.gz
+GSM1244645	13	GSM1244645_13	NE	female	asthma	allergic_asthma	baseline	NA	2011-06-07	1	GSM1244645_129_H07.CEL.gz
+GSM1244649	5	GSM1244649_5	NE	female	asthma	allergic_asthma	baseline	NA	2011-06-02	1	GSM1244649_138_C05.CEL.gz
+GSM1244653	16	GSM1244653_16	NE	male	healthy	NA	baseline	NA	2011-05-27	1	GSM1244653_144_G07.CEL.gz

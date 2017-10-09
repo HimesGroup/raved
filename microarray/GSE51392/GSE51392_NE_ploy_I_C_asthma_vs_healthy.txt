@@ -1,0 +1,13 @@
+GEO_ID	Subject	Sample	Tissue	Gender	Disease	Disease_des	Treatment	Treatment_des	ScanDate_Group	QC_Pass	Filename
+GSM1244589	2	GSM1244589_2	NE	female	healthy	NA	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-05-27	1	GSM1244589_15_A07.CEL.gz
+GSM1244602	3	GSM1244602_3	NE	female	asthma	allergic_asthma	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-06-02	1	GSM1244602_25_A07.CEL.gz
+GSM1244609	14	GSM1244609_14	NE	female	asthma	allergic_asthma	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-05-27	1	GSM1244609_44_B05.CEL.gz
+GSM1244616	6	GSM1244616_6	NE	female	asthma	allergic_asthma	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-05-27	1	GSM1244616_58_G09.CEL.gz
+GSM1244618	7	GSM1244618_7	NE	female	healthy	NA	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-06-02	1	GSM1244618_61_A05.CEL.gz
+GSM1244626	9	GSM1244626_9	NE	female	healthy	NA	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-06-07	1	GSM1244626_81_B07.CEL.gz
+GSM1244627	1	GSM1244627_1	NE	female	healthy	NA	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-06-02	1	GSM1244627_86_F07.CEL.gz
+GSM1244634	8	GSM1244634_8	NE	female	healthy	NA	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-05-27	1	GSM1244634_106_C09.CEL.gz
+GSM1244642	4	GSM1244642_4	NE	female	asthma	allergic_asthma	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-05-27	1	GSM1244642_124_H07.CEL.gz
+GSM1244644	13	GSM1244644_13	NE	female	asthma	allergic_asthma	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-06-07	1	GSM1244644_128_C05.CEL.gz
+GSM1244648	5	GSM1244648_5	NE	female	asthma	allergic_asthma	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-06-02	1	GSM1244648_137_G07.CEL.gz
+GSM1244652	16	GSM1244652_16	NE	male	healthy	NA	ploy_I_C	Poly(I:C) 24Aug/ml 24h	2011-05-27	1	GSM1244652_142_H07.CEL.gz
