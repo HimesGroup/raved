@@ -55,6 +55,12 @@ DE analysis is performed in a single comparison condition including:
 
 Official gene symbols are annotated to DE results. Plots are automatically generated for result visualization.
 
+## Example figures of QC and outlier detection
+
+![](<./figs/Figure1.png>)
+
+Figure 1. Examples of Quality Control with Outlier Detection. (A) Boxplots and density plots of raw probe log-intensities for arrays in GSE15823. (B) MA plots for two arrays with smallest and largest scoring in GSE4917. (C) Spatial plots for two arrays with smallest and largest scoring in GSE4302. D) Boxplots and density plots of NUSE and RLE for arrays in GSE4917. E) Heatmap and dendrogram of array pair-wise distance in GSE15823. Outliers are marked with an asterisk. Scan date indicates batch information.
+
 ## Description of files in repository
 `template_QC_report.Rmd`: R markdown codes for GSE4917 QC analysis
 
