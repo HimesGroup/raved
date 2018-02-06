@@ -56,7 +56,7 @@ Perfect match (PM) and mismatch (MM) probe intensities are log2 transformed and 
 
 **_Principal component analysis (PCA)_** is performed using log-intensities of all probe sets. PCA plots are generated using first two principle components colored by known factors (e.g. treatment conditions, donners and scan dates), visualizing similarities between arrays and these similarities’ correlation to batch effects.
 
-Figure 1. Examples of Quality Control with Outlier Detection. (A) Boxplots and density plots of raw probe log-intensities for arrays in GSE15823. (B) MA plots for two arrays with smallest and largest scoring in GSE4917. (C) Spatial plots for two arrays with smallest and largest scoring in GSE4302. D) Boxplots and density plots of NUSE and RLE for arrays in GSE4917. E) Heatmap and dendrogram of array pair-wise distance in GSE15823. Outliers are marked with an asterisk. Scan date indicates batch information.
+**Figure 1.** Examples of Quality Control with Outlier Detection. (A) Boxplots and density plots of raw probe log-intensities for arrays in GSE15823. (B) MA plots for two arrays with smallest and largest scoring in GSE4917. (C) Spatial plots for two arrays with smallest and largest scoring in GSE4302. D) Boxplots and density plots of NUSE and RLE for arrays in GSE4917. E) Heatmap and dendrogram of array pair-wise distance in GSE15823. Outliers are marked with an asterisk. Scan date indicates batch information.
 
 ![](<./figs/Figure1.png>)
 
