@@ -78,7 +78,7 @@ Prerequisite tools for RNA-Seq data analysis include:
 * Data download: SRA Toolkit
 * Read Alignment: STAR/HTSeq or kallisto
 * Quality Control Metrics: FastQC, SAMtools, Bamtools, Picard Tools
-* DE analysis: DSEseq2 or sleuth
+* DE analysis: DESeq2 or sleuth
 * Gene annotation: BioMart
 
 ## Description of files in repository
