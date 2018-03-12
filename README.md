@@ -5,13 +5,15 @@ Authors: Mengyuan Kan, Maya Shumyatcher, Blanca Himes
 
 ## Introduction
 
-RAVED is a pipeline written in two R Markdown scripts initially developed for reproducible analysis of microarray dataset from GEO, including the following:
-* Raw intensity data download
-* Phenotype file preparation
-* Quality control (QC) and outlier detection
-* Comparison assignment
-* Differential expression (DE) analysis 
+RAVED (Reproducible Analysis and Validation of Expression Data) is a pipeline that adopts several existing informatics tools but facilitates analysis of publicly available microarray and RNA-Seq data from GEO or SRA. RAVED consists of R Markdown documents that can be modified to execute analysis steps and create summary reports and result files. Here are major steps followed by RAVED:
 
+* GEO/SRA Data Download
+* Phenotype Preparation
+* Read Alignments and/or Transcript Quantification (RNA-Seq data only)
+* Quality Control Metrics
+* Differential Expression (DE) Analysis
+
+## Microarray Data Analysis
 Several freely accessible R packages for microarray data analysis are used in this pipeline. We use GEO dataset GSE4917 as an example and provide two R Markdown templates to reproduec the analysis pipeline and reports for GSE4917. The template_QC_report.Rmd script goes first including the steps of raw data download, phenotype file preparation, and QC. The template_DE_analysis_report.Rmd takes the output from the template_QC_report.Rmd and performs the DE analysis of the comparison of interest. The RMD files for other microarray data used for our integrative analysis of transcriptomic data asthma and glucocorticoid response can be found in the folder microarray.
 
 Prerequisite R packages for microarray data analysis include:
@@ -21,8 +23,6 @@ Prerequisite R packages for microarray data analysis include:
 * DE analysis: limma
 * Batch effect adjustment: sva
 * Microarry data gene annotation: annotation, hgu133plus2.db and hugene10sttranscriptcluster.db
-
-## Pipeline description
 
 ### Data download
 Raw data are downloaded from GEO directly including GSEMatrix files that are used for phenotype file preparation, and raw intensity data .CEL files, if provided, that are used for QC and DE analysis.
@@ -72,6 +72,14 @@ The comparison between test condition of interest versus within-study control (e
 * Batch effect adjustment
 
 Official gene symbols are annotated to DE results. Plots are automatically generated for result visualization.
+
+## RNA-Seq Data Analysis
+Prerequisite tools for RNA-Seq data analysis include:
+* Data download: SRA Toolkit
+* Read Alignment: STAR/HTSeq or kallisto
+* Quality Control Metrics: FastQC, SAMtools, Bamtools, Picard Tools
+* DE analysis: DSEseq2 or sleuth
+* Gene annotation: BioMart
 
 ## Description of files in repository
 `template_QC_report.Rmd`: R markdown codes for GSE4917 QC analysis
