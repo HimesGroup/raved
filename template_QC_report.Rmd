@@ -1,45 +1,66 @@
 ---
-title: 'Quality Control for Gene Expression Microarray Data -- GSE4917'
+title: 'RAVED: Quality Control for Gene Expression Microarray Data -- GSE4917'
 author: 'Mengyuan Kan (mengykan@upenn.edu)'
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
-    toc: FALSE
+    toc: TRUE
     depth: 3
+editor_options: 
+  chunk_output_type: console
 ---
 ***
 
 This report shows the QC steps for gene expression microarry data from GEO study, including:
 
-* Download GEO study and prepare phenotype data
-* Perform quality control process and detect outliers
+* GEO data download
+* Phenotype file preparation
+* Quality control metrics measurement and outlier detection
 
-Change the variables here
-```{r, eval=T}
+Mannually change the variables for GEO ID (geo_id), data directory (datadir) and result directory (resdir).
+
+```{r var, eval=T, echo=F}
 # GEO id
 geo_id="GSE4917"
-# direcotry stores GEO data and phenotype file
-datadir="C:/Users/mengykan/Projects/AsthmaApp/data/microarray"
-resdir="C:/Users/mengykan/Projects/AsthmaApp/res/microarray"
+# directory stores GEO data
+datadir="data"
+# directory stores generated files
+resdir="results"
+# other variables
+# The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
+shortname_func <- function(x){gsub("^(.*).(cel|CEL).gz","\\1",x)} # remove .cel.gz or .CEL.gz from sample
 ```
 
-Install the prerequisite R packages
-```{r eval=F, message=F, warning=F}
+Install the prerequisite R packages if they do not exist
+
+* GEOquery 
+* oligo
+* affy (Affymetrix microarray-specific QC analysis)
+* viridis (heatmap color)
+* ggplot2
+* gplots (heatmap2 plot)
+* Hmisc (compute hoeffd (Hoeffding's D statistics) for MA metrics)
+* devtools (compute pca)
+* dplyr
+* pander
+
+```{r pkg, eval=F, echo=F, message=F, warning=F}
 source("http://bioconductor.org/biocLite.R")
 biocLite("GEOquery")
 biocLite("oligo")
-biocLite("affy") # for Affymetrix microarray-specific QC analysis
+biocLite("affy")
 biocLite("viridis")
 install.packages("ggplot2")
 install.packages("gplots")
 install.packages("Hmisc")
 install.packages("devtools")
-install.package("dplyr")
-install.package("pander")
+install.packages("dplyr")
+install.packages("pander")
 ```
 
 Load the necessary libraries
-```{r eval=T, message=F, warning=F}
+
+```{r lib, eval=T, echo=F, message=F, warning=F}
 library(GEOquery)
 library(oligo)
 library(viridis) # heatmap colour
@@ -51,63 +72,66 @@ library(pander)
 library(dplyr)
 ```
 
+## GEO Data Download and Phenotype Preparation
 
-## Obtain and Inspect Raw Phenotype Data from GEO
-This step needs inspection as phenotype data provided by researchers are different. In general, the information of sample id, sample geo id, tissue, disease status, treatment status (if applied) is required. Addition information includes age and gender.
+#### GEO Dataset Download
 
-Load a GDS file with GEOquery. Download from GEO server if the data does not exist
+Download the GEO series matrix files if available. 
 
-
-If ths study was performed in multiple platforms, choose the samples using Affymetrix Human Genome U133 (Plus 2.0) Array
-
-```{r eval=T, warning=F,message=F}
-# check if GEO matrix file is existed
+```{r geo_download, eval=T, echo=F, warning=F, message=F}
+# check if GEO matrix file exists
 geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
-if (length(geo_fn)==0) { # matrix files are alreadly downloaded
-  gselms <- getGEO(geo_id, destdir=datadir,GSEMatrix = TRUE) # dowanload matrix file
-  print(attr(gselms, "names"))
-  if (length(gselms)>1) {  # multiple platform
-    message("This study was performed in multiple platforms")
-    idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
-    gse <- gselms[[idx]]
-  } else {gse <- gselms[[1]]}
-} else if (length(geo_fn)==1) {
-  print(geo_fn)
-  gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-} else { # multiple platform
-  print(geo_fn)
-  message("This study was performed in multiple platforms")
-  geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
-  gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+ if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+   gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
+   
+   if (length(gselms)>1) {  # multiple platform
+     message("This study was performed in multiple platforms")
+     idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
+     gse <- gselms[[idx]]
+     
+   } else {gse <- gselms[[1]]}
+ } else if (length(geo_fn)==1) {
+   gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+ } else { # multiple platform
+   message("This study was performed in multiple platforms")
+   geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
+   gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+ }
+```
+
+
+Show expression dataset features
+```{r gse, eval=T, echo=F}
+gse
+```
+
+#### Modify raw phenotype information
+
+Obtain raw phenotype information from the GEO dataset and generated a summary of all the phenotypic variables for overview.
+
+For continuous variables, show the summary table. For categorical variables, only show the first five levels of variables.
+
+```{r phenosumm_raw, eval=T, echo=F, results="asis"}
+pheno.raw <- pData(phenoData(gse))
+for (x in names(pheno.raw)) {
+  vec=pheno.raw[,x]
+  if (!is.numeric(vec)) {
+    vec <- factor(vec)
+    if (nlevels(vec)>5) {res=table(droplevels(vec[vec%in%levels(vec)[1:5]]))} else {res=table(vec)}
+    res=data.frame(res)
+    names(res) <- c(x,"counts")
+  }
+  if (is.numeric(vec)){res=summary(vec)}
+  pandoc.table(res, justify='left',split.tables=Inf, caption=x)
 }
 ```
 
-Primary Check for phenotype information.
-```{r eval=T}
-pheno.df <- pData(phenoData(gse))
-names(pheno.df)
-dim(pheno.df)
-rm(gse) # remove this object as it will not be used
-```
 
-Show all the phenotype data from GEO study. If there are more than 10 levels of variables in a column, only show the first five levels of variables.
-```{r eval=T,results="asis"}
-for (i in 1:ncol(pheno.df)) {
-  if (length(levels(pheno.df[,i]))>=10) {
-    res <- pheno.df[pheno.df[,i]%in%levels(pheno.df[,i])[1:5],]
-    res[,i] <- factor(res[,i])
-  } else {res <- pheno.df}
-  res <- data.frame(table(res[,i]))
-  names(res) <- c(names(pheno.df)[i],"counts")
-  pandoc.table(res,justify = 'left',split.table = Inf)
-}
-```
+These raw phenotypic variables are not informative (e.g. description, characteristics_ch1 and source_name_ch1) and not created in a consice way.  Select useful phenotype variables and manually modify them using a standard format (e.g. GEO_ID, Subject, Disease, Treatment, Age, Gender). **This step requires mannual inspection.**
 
-Select required phenotype variables from the primary check and generate
-standardized columns. This is a **manual** step.
-```{r eval=T, warning=F}
+```{r pheno_new, eval=T, warning=F, echo=F, results="asis"}
 cols <- c("title","geo_accession","source_name_ch1")
-pheno.new <- pheno.df %>%
+pheno <- pheno.raw %>%
   dplyr::select(cols) %>%
   dplyr::mutate(GEO_ID=geo_accession) %>%
   dplyr::mutate(Subject=gsub("^.*biological (.*)$","\\1",title)) %>%
@@ -117,102 +141,139 @@ pheno.new <- pheno.df %>%
   dplyr::mutate(treatment_time=gsub(" ","",treatment_time)) %>%
   dplyr::mutate(treatment_drug=ifelse(grepl("dexamethasone",source_name_ch1),"dex","baseline")) %>%
   dplyr::mutate(Treatment=paste(treatment_drug,treatment_time,sep="_")) %>%
+  dplyr::mutate(Disease="healthy") %>%
   dplyr::mutate(Age="35") %>%
-  dplyr::mutate_if(is.character,as.factor)
-pheno.new <- pheno.new[,(length(cols)+1):ncol(pheno.new)]
+  dplyr::mutate_if(is.character,as.factor) %>%
+  dplyr::select((length(cols)+1):ncol(.)) # remove original columns
 ```
 
-```{r eval=T, warning=F}
-write.table(pheno.new,paste0(datadir,"/",geo_id,"_Phenotype_withoutQC.txt"),col.names=T,row.names=F,sep="\t",quote=F)
-rm(pheno.new)
-```
+#### Raw intensity data download
 
-Check phenotype table and the sample size for different groups
-```{r eval=T, warning=F,results="asis"}
-# read in the phenotype file if it was created before
-pheno <-read.table(paste0(datadir,"/",geo_id,"_Phenotype_withoutQC.txt"),header=T, sep="\t")
-pandoc.table(pheno[1:5,],split.table=Inf) # show first 5 rows
-avail_group=c("Tissue","Disease","Treatment")[c("Tissue","Disease","Treatment")%in%names(pheno)]
-res=as.data.frame(table(pheno[,avail_group]))
-names(res) <- c(avail_group,"Frequency")
-pandoc.table(res,split.table=Inf)
-```
-
-## Quality Control for Microarray Data
-Quality control includes:
-
-* Raw probe intensity plots and outlier detection
-* Distribution of perfect match (PM) and mismatch (MM)
-* RNA degradation plots
-* MA plots and outlier detection
-* Spatial distribution plots and outlier detection
-* Relative log expression (RLE) plots and outlier detection
-* Normalized unscaled standard error (NUSE) and outlier detection
-* Sample distance estimation and outlier detection
-* Principal component analysis (PCA)
-
-
-The general QC steps and outlier detection methods are derived from [arrayQualityMetrics]( https://github.com/Bioconductor-mirror/arrayQualityMetrics)
-
-Detailed description of QC steps for microarray data can be found [here](https://doi.org/10.1371/journal.pone.0049831.s001)
-
-
-### Obtain Gene Expression Raw Data
-Download raw data files (.cel) if the data folder does not exist.
-```{r eval=T,  message=FALSE}
-celfiles <- paste0(datadir,"/",geo_id,"/data/",gsub("^.*/(.*)$","\\1",pheno.df$supplementary_file)) # get .cel file names to read in. This step is important for samples scanned in different platforms
-if (!all(celfiles%in%list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=".CEL.gz|.cel.gz",full.names=T))) { # if cel files are not downloaded or not all the sample cel files exsist
+```{r cel_utility, eval=T, echo=F}
+# The celdownload_func function downloads the .cel files from GEO and unextract the zip file
+celdownload_func <- function() {
   getGEOSuppFiles(geo_id,baseDir=datadir) #download GEO files
   untar(paste0(datadir,"/",geo_id,"/",geo_id,"_RAW.tar"), exdir=paste0(datadir,"/",geo_id,"/data")) # extract the zip file
 }
+
+# The celall_func function obtains all .cel files in the data directory with full path
+celall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=".CEL.gz|.cel.gz",full.names=T)}
+# The sampall_func function obtains all samples whose .cel files exist
+sampall_func <- function() {basename(gsub("^(.*).(cel|CEL).gz","\\1",celall_func()))}
+# The celfiles_func function obtains .cel files of interest with full path
+celfiles_func <- function() {
+  cel_all=celall_func()
+  samp_all=sampall_func()
+  samp_of_interest=as.character(pheno$GEO_ID)
+  cel_all[samp_all%in%samp_of_interest]
+}
 ```
 
-Read in raw data. Generate raw data object under ExpressionFeatureSet (oligo class).
-```{r eval=T,  message=FALSE, warning=F, results="hide"}
+Download raw data files (.cel) if available.
+
+```{r cel_download, eval=T, echo=F, message=FALSE}
+# Check whether the .cel files already exist. Otherwise download from GEO
+samp_exist=sampall_func()
+samp_of_interest=as.character(pheno$GEO_ID)
+if (length(samp_exist)==0) {
+  celdownload_func()
+} else {
+  if (length(intersect(samp_exist,samp_of_interest))!=length(samp_of_interest)) {celdownload_func()}
+}
+samp_exist=sampall_func()
+if (length(intersect(samp_exist,samp_of_interest))!=length(samp_of_interest)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+```
+
+Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
+
+```{r cel_readin, eval=T, echo=F, message=F, warning=F, results="hide"}
+celfiles=celfiles_func()
 raw.data <- read.celfiles(celfiles)
 ```
 
-Obtain scan date from raw data used for batch information
-```{r eval=T}
+Obtain scan date information from the raw.data for batch effect adjustment
+
+```{r scandate, eval=T, echo=F, results="asis"}
 # As the scan date and scan time are usually joined by "T" or a white space, use both pattern to split the date with time
 pheno$ScanDate_Group <- sapply(strsplit(as.character(protocolData(raw.data)$dates), "T| "), function(x) {x[[1]]})
+pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
 ```
 
-```{r eval=T, warning=F,results="asis"}
-pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
+Show the summary of phenotype variables and the sample size for different groups
+
+```{r pheno_check_raw, eval=T, warning=F,results="asis",echo=F}
+# show the first five rows
+pandoc.table(head(pheno,5), split.tables=Inf,caption="Show the first 5 rows of the modified phenotype file")
+# show the groups of interest
+avail_group=c("Tissue","Disease","Treatment")[c("Tissue","Disease","Treatment")%in%names(pheno)]
+res=as.data.frame(table(pheno[,avail_group]))
+names(res) <- c(avail_group,"Count")
+pandoc.table(res, split.tables=Inf, caption="Sample size in different tissue and disease/treatment groups")
+# show samples in different batch
+res=as.data.frame(table(pheno[,avail_group]))
+names(res) <- c(avail_group,"Count")
+pandoc.table(res, split.tables=Inf, caption="Sample size in different batch")
+```
+
+```{r pheno_withoutQC, eval=T, warning=F, echo=F}
+write.table(pheno,paste0(resdir,"/",geo_id,"_Phenotype_withoutQC.txt"),col.names=T,row.names=F,sep="\t",quote=F)
+```
+
+
+## Quality Control for Microarray Data
+
+The major QC steps and scoring methods for outliers were adapted from [arrayQualityMetrics](https://bioconductor.org/packages/release/bioc/html/arrayQualityMetrics.html). The threshold to determine an outlier used in arrayQualityMetrics is the boxplot's upper whisker, i.e. values beyond 1.5 times the interquartile range, which is also applied to our pipeline. The following QC metrics are included in a routine analysis. The QC metrics used for outlier detection are marked with an asterisk.
+
+* Boxplots and density plots for raw probe intensities*
+* RNA degradation plots
+* Density plots for perfect match (PM) and mismatch (MM) probe
+* MA plots*
+* Spatial plots*
+* Boxplots for the normalized unscaled standard error (NUSE)*
+* Boxplots for the relative log expression (RLE)*
+* Heatmap and dendrogram for distance between arrays*
+* Principal component analysis (PCA) plots
+
+### Phenotype Data Overview
+
+Read in the pre-prepared phenotype file.
+```{r pheno_readin, eval=T, echo=F}
+pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withoutQC.txt")
+pheno <- read.table(pheno_fn, header=T, sep="\t")
+```
+
+Read in the pre-downloaded raw intensity data.
+
+```{r rawdata_readin, eval=T, echo=F, message=F, warning=F, results="hide"}
+celfiles=celfiles_func()
+raw.data <- read.celfiles(celfiles)
+# assign phenotype data to raw expression data
+pData(raw.data) <- pheno
+row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
+# Check if the sample names derived from expression data match those in phenotype file
+rowname <- gsub("^(.*).(cel|CEL).gz","\\1",row.names(pData(raw.data)))
+if (!identical(rowname,as.character(pData(raw.data)$GEO_ID))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
+```
+
+```{r usrdefine_utility, eval=T, echo=F}
 # assign colours to Scan Date for plots
 colours=c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D", "#666666", "#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5", "#D9D9D9", "#BC80BD", "#CCEBC5", "#FFED6F") # first 8 colour names derived from Dark2, and last 12 names from Set3
 i=length(levels(pheno$ScanDate_Group))
 colour_list <- colours[1:i]
 names(colour_list) <- levels(pheno$ScanDate_Group) # colour to corresponding scan date
-# assign pheno type data to raw expression data
-pData(raw.data) <- pheno
-row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
-pandoc.table(pData(raw.data)[1:5,],split.table = Inf) # show first 5 rows
-# summary of ScanDate_Group
-res=as.data.frame(table(pData(raw.data)$ScanDate_Group))
-names(res) <- c("ScanDate_Group","Frequency")
-pandoc.table(res,split.table=Inf) # show first 5 rows
 ```
 
-*Check if the sample names derived from expression data match those in phenotype file*
 
 ### Raw Probe Intensity Boxplots and Density Histograms
 
-The signal intensity distributions of all samples (arrays) are expected to have the similar scale (i.e. the similar positions and widths of the boxes). Use Kolmogorov-Smirnov statistic to detect the arrays that have values deviated from others, which may indicate an experimental problem.
+The log2-transformed intensity distributions of all samples (arrays) are expected to have the similar scale (i.e. the similar positions and widths of the boxes). Outlier detection is applied by computing a Kolmogorov-Smirnov statistic (Ka) between log-intensity distribution for one array and the pooled array data, where an array with a Ka beyond the upper whisker is designated as an outlier.
 
-1. Compute log2 transformed raw probe intensity
 
-```{r eval=T}
-raw.data.log2 <- log2(exprs(raw.data))
-dim(raw.data.log2)
-```
-
-Use subsamp function to reduce intensity data with randomly selected 20000 probes
-```{r eval=T}
-# subset data
-subsamp <- function(x) {
-  subsample=20000 # if number of probes are >20000, randomly select 20000 probes for plot or compute
+```{r raw_intensity_utility, eval=T, echo=F, warning=F}
+# The subsamp function randomly selects 20000 probes
+subsamp <- function(x,num=20000, seed=123) {
+  set.seed(seed)
+  subsample=num # if number of probes are >20000, randomly select 20000 probes for plot or compute
   if (nrow(x)>subsample) {
     ss  = sample(nrow(x), subsample)
     Mss = x[ss,,drop=FALSE]
@@ -222,16 +283,9 @@ subsamp <- function(x) {
   }
   Mss
 }
-Mss_raw <- subsamp(raw.data.log2)
-```
 
-2. Outlier detection for raw probe intensity
-
-Compute the Kolmogorov-Smirnov statistic Ka between each array's (i.e. sample) values (i.e. log2 transformed raw probe intensity values) and the pooled, overall distribution of the values. Detect outliers that are deviated from the threshold using outlier_detection_KS function.
-
-```{r eval=T, warning=F}
-# compute KS statistics to detect outliers
-outlier_detection_KS = function(exprs) { # matrix (row: probe intensities/RLE values etc., col: array (e.g. sample))
+# The outlier_KS_func function computes KS statistics for outlier detection
+outlier_KS_func = function(exprs) { # matrix (row: probe intensities/RLE values etc., col: array (e.g. sample))
   fx = ecdf(as.vector(exprs)) # get empirical cumulative distribution function of the data
   KS=suppressWarnings(apply(exprs, 2, function(v)ks.test(v, y = fx, alternative="two.sided")$statistic))
   stats = stats::fivenum(KS, na.rm = TRUE) # Tukey's five number summary (minimum, lower-hinge, median, upper-hinge, maximum)
@@ -240,21 +294,14 @@ outlier_detection_KS = function(exprs) { # matrix (row: probe intensities/RLE va
   th = (stats[4] + coef * iqr)
   list(threshold = th, stats=KS, outlier = which(KS > th))
 }
-outlier_raw = names(outlier_detection_KS(Mss_raw)$outlier)
-```
 
-
-3. Boxplot for raw probe intensities
-
-Use boxplot_func function to plot raw probe intensities. Outliers marked with * have different raw proble intensity distributions from others
-
-```{r eval=T, warning=F, message=F,fig.height=10, fig.width=7}
-# boxplot function
+# The boxplot_func function generates boxplots for raw data metrics (e.g. probe intensities, RLE, NUSE) 
 boxplot_func <- function(Mss,outlier,ylab) {
   # use * to mark the outliers in boxplot
-  array_name <- colnames(Mss)
+  array_name <- shortname_func(colnames(Mss))
+  outlier <- shortname_func(outlier)
   array_name[array_name%in%outlier] <- paste0("*",outlier)
-  # boxplot RLE by array
+  # boxplot raw intensity by array
   ylim = quantile(Mss, probs = c(0.01, 0.99), na.rm=TRUE) # create range of y-axsis
   # create data frame for plot
   df <- data.frame(
@@ -263,7 +310,6 @@ boxplot_func <- function(Mss,outlier,ylab) {
     scandate=rep(pData(raw.data)$ScanDate_Group,each=nrow(Mss)) # for color
   )
   cols <- colour_list
-
   ggplot(df, aes(sample_id,values,fill=scandate)) + geom_boxplot(outlier.colour=NA) +
     coord_flip() + theme_bw() +
     ylim(ylim) +
@@ -272,99 +318,69 @@ boxplot_func <- function(Mss,outlier,ylab) {
     scale_fill_manual("Scan Date",values=cols) +
     theme(axis.title.y=element_blank())
 }
-boxplot_func(Mss_raw,outlier_raw,"Raw Probe Intensities")
-```
 
-4. Density smoothed histograms of log2 transformed raw probe intensities.
-
-This step requires manual inspection. The intensity curves of all samples (arrays) are expected to have the similar shapes and ranges. Samples with deviated curves are likely to have problematic experiments. Various features of the distributions can be indicative of quality related phenomena. For instance, high levels of background will shift an array's distribution to the right. Lack of signal diminishes its right right tail. A bulge at the upper end of the intensity range often indicates signal saturation.
-
-```{r eval=T, warning=F}
-# create data frame for plot
-df <- data.frame(
-  sample_id=rep(colnames(Mss_raw),each=nrow(Mss_raw)),
-  values=as.numeric(Mss_raw),
-  scandate=rep(pData(raw.data)$ScanDate_Group,each=nrow(Mss_raw)) # for color
-)
-cols <- colour_list
-
-ggplot(df,aes(x=values,colour=scandate)) + geom_line(aes(group=sample_id),stat="density") +
-  theme_bw() +
-  xlab("Raw Probe Intensities") +
-  ylab("Density") +
-  scale_color_manual("Scan Date",values=cols)
-rm(Mss_raw,df)
-```
-
-
-### Distribution of Perfect Match (PM) and Mismatch (MM)
-
-
-This step is **Affymetrix microarray-specific QC analysis**. There are two paired probe types: perfect match (PM) and of mismatched (MM) probes. A PM probe matches a strand of cDNA, while the corresponding MM probe differs from the PM by a change in the central nucleotide.
-
-A probe set is called present if the intensity value of PM is significantly larger than MM.
-
-The Affymetrix approach is under attack because between 15% - 30% of the MM are greater than the PM. For some newer arrays, MM probes are not used. If the number of PMs is not equal to that of MMs, this might be a PM-only array.
-
-If this study has both PM and MM, a plot will be generated that shows the density distributions of the log2-transformed intensities grouped by the matching type of the probes. We expect that MM probes have poorer hybridization than PM probes, and thus that the PM curve is to the right of the MM curve.
-
-```{r eval=T, warning=F}
-if (class(raw.data)=="GeneFeatureSet") {
-  message("GeneFeatureSet does not have MM probes. No plots will be generated.")
-} else {
-  PM <- log2(pm(raw.data))
-  MM <- log2(mm(raw.data))
-  if(nrow(PM) != nrow(MM)) {
-    message("This might be a PM-only array. No plots will be generated.")
-    rm(PM,MM)
-  } else {
-    subsample=20000
-    if(nrow(PM)>subsample) { # randomly select 20000 probe sets
-      sel = sample(nrow(PM), subsample)
-      sPM = PM[sel, ]
-      sMM = MM[sel, ]
-    } else {
-      sPM = PM
-      sMM = MM
-    }
-    rm(PM,MM) 
-  
-    df <- data.frame(
-      values=c(as.numeric(sPM),as.numeric(sMM)),
-      types=c(rep("PM",each=length(as.numeric(sPM))),rep("MM",each=length(as.numeric(sMM))))
-    )
-    cols=colours[1:2]
-    ggplot(df,aes(x=values,colour=types)) + geom_line(aes(group=types),stat="density") +
-      theme_bw() +
-      xlab("Intensity") +
-      ylab("Density") +
-      scale_color_manual(values=cols) +
-      theme(legend.title=element_blank())
-  }
+# The densplot_func function plots density curve for raw data metrics (e.g. probe intensity)
+densplot_func <- function(Mss) {
+  # create data frame for plot
+  df <- data.frame(
+    sample_id=rep(colnames(Mss),each=nrow(Mss)),
+    values=as.numeric(Mss),
+    scandate=rep(pData(raw.data)$ScanDate_Group,each=nrow(Mss)) # for color
+  )
+  cols <- colour_list
+  ggplot(df,aes(x=values,colour=scandate)) + geom_line(aes(group=sample_id),stat="density") +
+    theme_bw() +
+    xlab("Raw Probe Intensities") +
+    ylab("Density") +
+    scale_color_manual("Scan Date",values=cols)
 }
-rm(sPM,sMM,df)
+
+# The raw_intensity_func function outputs raw probe intensity metrics
+raw_intensity_func <- function() {
+  Mss=log2(subsamp(exprs(raw.data))) # use log2 transformed raw probe intensity
+  outlier_res=outlier_KS_func(Mss)
+  outlier=names(outlier_res$outlier)
+  boxplot=boxplot_func(Mss=Mss, outlier=outlier, ylab="Raw Probe Intensities")
+  densplot=densplot_func(Mss=Mss)
+  return(list(outlier=outlier,boxplot=boxplot,densplot=densplot))
+}
+```
+
+1. Outlier detection for log2 raw probe intensity
+
+Compute the Kolmogorov-Smirnov statistic Ka between each array's (i.e. sample) values (i.e. log2 transformed raw probe intensity values) and the 
+pooled, overall distribution of the values.
+
+```{r raw_intensity_outlier, eval=T, echo=F, warning=F}
+res_intensity=raw_intensity_func()
+outlier_intensity = names(res_intensity$outlier)
+cat(length(outlier_intensity), "outlier(s) are detected in the raw intensity metrics.\n")
+if (length(outlier_intensity)>0) {cat("They are: ", outlier_intensity)}
+```
+
+2. Boxplots for log2 raw probe intensity
+
+```{r raw_intensity_boxplot, eval=T, echo=F, message=F, warning=F, fig.height=8, fig.width=6}
+res_intensity$boxplot
+```
+
+3. Density curves for log2 raw probe intensity
+
+The intensity curves of all samples (arrays) are expected to have the similar shapes and ranges. Samples with deviated curves are likely to have problematic experiments. For example, high levels of background will shift an array's distribution to the right. Lack of signal diminishes its right right tail. A bulge at the upper end of the intensity range often indicates signal saturation.
+
+```{r raw_intensity_densplot, eval=T, echo=F}
+res_intensity$densplot
 ```
 
 ### RNA Digestion
 
-Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each gene is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5´ to the 3´ end. It is expected that probe intensities are lower at the 5´ end of a probe set when compared to the 3´end as RNA degradation starts from the 5´end of a molecule. RNA which is too degraded will show a very high slope from 5´ to 3´. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
+Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5´ to the 3´ end. It is expected that probe intensities are lower at the 5´ end of a probe set when compared to the 3´end as RNA degradation starts from the 5´end of a molecule. RNA which is too degraded will shows a very high slope from 5´ to 3´. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
 
-This step is an **Affymetrix microarry-specific QC step**, as the probes in each probe set matrix generated by affy package are ordered from 5' to 3', which is not implemented in oligo package.
+This step requires R package affy that outputs the probes in each probe set matrix ordered from 5' to 3', while this function is not implemented in the oligo package.
 
-1. Read in raw data as an AffyBatch object
-
-Generate raw data object under AffyBatch (affy class) for affymetrix microarray-specific QC analysis.
-```{r eval=T, message=F, warning=F}
-library(affy) # for Affymetrix microarray-specific QC analysis
-raw.data.affy <- read.affybatch(celfiles,compress=T)
-```
-
-2. Compute mean PM intensity for probes following 5' to 3' order
-
-Compute mean PM intensities in each probe position and plot in the next step. Adopt AffyRNAdeg function from affy package but include a step that randomly selects 20000 probe sets. 
-
-```{r eval=T}
-RNAdegaffy <- function(data){ # input a list of probe set matrix with rows as probe ids and columns as samples
+```{r RNAdegaffy_utility, eval=T, echo=F}
+# The RNAdegaffy_func function compute mean PM intensities in each probe position following 5' to 3' order. Adopted from the AffyRNAdeg function in the affy package but include a step that randomly selects 20,000 probe sets.
+RNAdegaffy_func <- function(data){ # input a list of probe set matrix with rows as probe ids and columns as samples
   {
     names <- colnames(data[[1]])
     probe.set.size <- function(x) {
@@ -380,6 +396,7 @@ RNAdegaffy <- function(data){ # input a list of probe set matrix with rows as pr
   
   subsample=20000
   if (length(data)>subsample) { # randomly select 10000 probe sets
+    set.seed(12345)
     ss = sample(length(data),subsample)
     data = data[ss,drop=FALSE]
   }
@@ -415,22 +432,74 @@ RNAdegaffy <- function(data){ # input a list of probe set matrix with rows as pr
   names(answer) <- c("N", "sample.names", "means.by.number","ses", "slope", "pvalue")
   return(answer)
 }
+
+# The RNAdeg_func function generates RNA degradation plots
+RNAdeg_func <- function() {
+  # 1. Read in raw data as an AffyBatch object
+  library(affy) # for Affymetrix microarray-specific QC analysis
+  raw.data.affy <- read.affybatch(celfiles,compress=T)
+  # 2. Obtain a list of probe sets with a matrix of oligos (probes) by samples as an input and compute statistics of the mean PM intensities from 5' to 3' probe positions. 
+  PM_list <- affy::pm(raw.data.affy,LIST=T) 
+  PM_list <- lapply(PM_list,log2)
+  raw.data.rnadeg <- RNAdegaffy_func(PM_list) # Compute mean PM intensity for probes following 5' to 3' order.
+  # 3. Plot 5' to 3' mean PM intensity
+  status.cols <- unlist(lapply(pData(raw.data)$ScanDate_Group,function(x)colour_list[x])) # colour list to corresponding scan date list
+  plotAffyRNAdeg(raw.data.rnadeg,cols=status.cols)
+  legend("topleft",legend=names(colour_list),fill=colour_list,cex=0.6)
+  detach("package:affy", unload=TRUE) # detach the affy package
+}
 ```
 
-Obtain a list of probe sets with a matrix of oligos (probes) by samples as an input and compute statistics of the mean PM intensities from 5' to 3' probe positions. 
-```{r eval=T, warning=F,message=F,results="hide"}
-PM_list <- affy::pm(raw.data.affy,LIST=T) 
-PM_list <- lapply(PM_list,log2)
-raw.data.rnadeg <- RNAdegaffy(PM_list)
-rm(PM_list)
+```{r RNAdeg_plot, eval=T, echo=F, message=F, warning=F}
+RNAdeg_func()
 ```
 
-3. Plot 5' to 3' mean PM intensity
-```{r eval=T}
-status.cols <- unlist(lapply(pData(raw.data)$ScanDate_Group,function(x)colour_list[x])) # colour list to corresponding scan date list
-plotAffyRNAdeg(raw.data.rnadeg,cols=status.cols)
-legend("topleft",legend=names(colour_list),fill=colour_list,cex=0.6)
-detach("package:affy", unload=TRUE) # detach affy package
+### Distribution of Perfect Match (PM) and Mismatch (MM)
+
+There are two paired probe types: perfect match (PM) and of mismatched (MM) probes. A PM probe matches a strand of cDNA, while the corresponding MM probe differs from the PM by a change in the central nucleotide. A probe set is called present if the intensity value of PM is significantly larger than MM. However, the Affymetrix approach is under attack because between 15%-30% of the MM are greater than the PM. For some newer arrays, MM probes are not used. If the number of PMs is not equal to that of MMs, this might be a PM-only array.
+
+If both PM and MM are present, the density curves of log2 PM ana MM intensities are generated, where MM probes are expected to have smaller log2-intensity at the peak than PM probes due to their nonspecific hybridization.
+
+```{r PMMM_utility, eval=T, echo=F}
+PMMM_func <- function() {
+  if (class(raw.data)=="GeneFeatureSet") {
+    message("GeneFeatureSet does not have MM probes. No plots will be generated.")
+  } else {
+    PM <- log2(pm(raw.data))
+    MM <- log2(mm(raw.data))
+    if(nrow(PM) != nrow(MM)) {
+      message("This might be a PM-only array. No plots will be generated.")
+      rm(PM,MM)
+    } else {
+      subsample=20000
+      if(nrow(PM)>subsample) { # randomly select 20000 probe sets
+        sel = sample(nrow(PM), subsample)
+        sPM = PM[sel, ]
+        sMM = MM[sel, ]
+      } else {
+        sPM = PM
+        sMM = MM
+      }
+      rm(PM,MM) 
+      
+      df <- data.frame(
+        values=c(as.numeric(sPM),as.numeric(sMM)),
+        types=c(rep("PM",each=length(as.numeric(sPM))),rep("MM",each=length(as.numeric(sMM))))
+      )
+      cols=colours[1:2]
+      ggplot(df,aes(x=values,colour=types)) + geom_line(aes(group=types),stat="density") +
+        theme_bw() +
+        xlab("Intensity") +
+        ylab("Density") +
+        scale_color_manual(values=cols) +
+        theme(legend.title=element_blank())
+    }
+  }
+}
+```
+
+```{r PMMM_plot, eval=T, echo=F}
+PMMM_func()
 ```
 
 ### MA Plots
@@ -442,17 +511,15 @@ The x-axis indicates the average log-intensity of both arrays, which is called A
 
 It is expected that the probe levels do not differ systematically within a group of replicates, so that the MA-plot is centered on the y-axis (y=0 or M=0) from low to high intensities.
 
-Use the Hoeffding's statistic Da to detect the outliers.
-
-1. Compute M-A matrices
-
-```{r eval=T}
-MA_cal <- function(x) { # matrix (row: probe intensities, col: array (samples)
+```{r MA_utility, eval=T, echo=F}
+# The MAcal_func function computes M and A matrices, while use the intensity of 20000 randomly selected probes
+MAcal_func <- function(x) { # matrix (row: probe intensities, col: array (samples)
   medArray = rowMedians(x, na.rm=TRUE)
   M =  x - medArray
   A = (x + medArray)/2
   subsample=20000
   if(nrow(M)>subsample) {
+    set.seed(12345)
     sel = sample(nrow(M), subsample)
     sM = M[sel, ]
     sA = A[sel, ]
@@ -462,15 +529,9 @@ MA_cal <- function(x) { # matrix (row: probe intensities, col: array (samples)
   }
   list(M=sM,A=sA) # return a list with M and A data matrices
 }
-sMA <- MA_cal(raw.data.log2)
-```
 
-2. Outlier detection for MA
-
-Compute the Hoeffding's statistic Da (hoeffd function from Hmisc package) on the joint distribution of A and M for each array. Detect outliers that have a Da value greater than 0.15, the default threshold.
-
-```{r eval=T, warning=F}
-outlier_detection_MA = function(exprs) { # list with M and A data matrices
+# The outlier_MA_func function computes the Hoeffding's statistic (Da) statistics for outlier detection
+outlier_MA_func <- function(exprs) { # list with M and A data matrices
   M=exprs$M
   A=exprs$A
   Dstats = sapply(1:ncol(M), function(x){hoeffd(A[,x], M[,x])$D[1,2]})
@@ -478,70 +539,87 @@ outlier_detection_MA = function(exprs) { # list with M and A data matrices
   Dthresh = 0.15
   list(threshold=Dthresh, stats=Dstats, outlier = which(Dstats > Dthresh))
 }
-outlier_res_MA <- outlier_detection_MA(sMA)
-outlier_MA <- names(outlier_res_MA$outlier)
+
+# The MAplot_func function plots samples with the first 4 highest and lowest values of Da. The value of Da for each sample is shown in the panel headings. Outliers marked with * have Da values >0.15.
+MAplot_func <- function(sMA, outlier_res) {
+# select arrays with top 4 highest and lowest Da
+  stats_order <- order(outlier_res$stats)
+  column_sel <- stats_order[c(1:4,(ncol(sMA$M)-3):ncol(sMA$M))]
+  stats_sel <- round(outlier_res$stats[column_sel],2)
+  scandate_sel <- pData(raw.data)$ScanDate_Group[column_sel]
+  M_sel <- sMA$M[,column_sel]
+  A_sel <- sMA$A[,column_sel]
+  # use * to mark the outliers
+  array_name <- shortname_func(colnames(M_sel))
+  outlier_MA=shortname_func(names(outlier_res$outlier))
+  array_name[array_name%in%outlier_MA] <- paste0("*",array_name[array_name%in%outlier_MA])
+  array_name <- paste0(array_name," (D=",stats_sel,")") # add D statistics to corresponding samples
+  # create data frame for plot
+  df <- data.frame(
+    sample_id=rep(array_name,each=nrow(M_sel)),
+    scandate=rep(scandate_sel,each=nrow(M_sel)),
+    M=as.numeric(M_sel),
+    A=as.numeric(A_sel)
+  )
+  # MA plots
+  ggplot(df,aes(x=A,y=M,color=scandate)) + geom_point(alpha=0.1) + theme_bw() +
+    scale_color_manual("Scan Date",values=colour_list) +
+    facet_wrap(~sample_id,ncol=2)
+}
+
+# The MA_func function outputs MA metrics
+MA_func <- function(){
+  # Compute M-A metrics
+  sMA <- MAcal_func(log2(exprs(raw.data)))
+  outlier_res <- outlier_MA_func(exprs=sMA)
+  outlier <- names(outlier_res$outlier)
+  plot <- MAplot_func(sMA=sMA, outlier_res=outlier_res)
+  return(list(outlier=outlier, plot=plot))
+}
 ```
 
-3. MA plots
+1. Outlier detection for MA plots
 
-The MA plots show samples with the first 4 highest and lowest values of Da. The value of Da for each sample is shown in the panel headings. Outliers marked with * have Da values >0.15.
+Outlier detection is applied by computing a Hoeffding's statistic (Da) on the joint distribution of A and M for each array, where an array with a Da >0.15 is designated as an outlier.
 
-```{r eval=T, warning=F,fig.height=10, fig.width=7}
-# select arrays with top 4 highest and lowest Da
-stats_order <- order(outlier_res_MA$stats)
-column_sel <- stats_order[c(1:4,(ncol(sMA$M)-3):ncol(sMA$M))]
-stats_sel <- round(outlier_res_MA$stats[column_sel],2)
-scandate_sel <- pData(raw.data)$ScanDate_Group[column_sel]
-M_sel <- sMA$M[,column_sel]
-A_sel <- sMA$A[,column_sel]
-# use * to mark the outliers
-array_name <- colnames(M_sel)
-array_name[array_name%in%outlier_MA] <- paste0("*",array_name[array_name%in%outlier_MA])
-array_name <- paste0(array_name," (D=",stats_sel,")") # add D statistics to corresponding samples
-# create data frame for plot
-df <- data.frame(
-  sample_id=rep(array_name,each=nrow(M_sel)),
-  scandate=rep(scandate_sel,each=nrow(M_sel)),
-  M=as.numeric(M_sel),
-  A=as.numeric(A_sel)
-)
-# MA plots
-ggplot(df,aes(x=A,y=M,color=scandate)) + geom_point(alpha=0.1) + theme_bw() +
-  scale_color_manual("Scan Date",values=colour_list) +
-  facet_wrap(~sample_id,ncol=2)
-rm(sMA,df)
+```{r MA_outlier, eval=T, echo=F, message=F, warning=F}
+res_MA=MA_func()
+outlier_MA=res_MA$outlier
+cat(length(outlier_MA), "outliers are detected in the MA metrics.\n")
+if (length(outlier_MA)>0) {cat("They are: ", outlier_MA)}
+```
+
+2. MA plots
+
+MA plots of the samples with the 4 highest and lowest Hoeffding's statistics.
+
+```{r MA_plot, eval=T, echo=F, message=F, warning=F, fig.height=10, fig.width=7}
+res_MA$plot
 ```
 
 ### Spatial Distribution
 
-Spatial images are artificial visualizations of an array that are created to detect spatial trends or biases on an array. Upon scanning, a scale factor is applied to each array of a dataset in order to equalize the arrays mean intensities. A dataset of good quality should have comparable scale factors with limited variation.
+Spatial plots show an artificial colored image of an array's spatial distribution of intensities that indicate spatial variation in an array. Log-intensities of probes are plotted by their corresponding spatial x and y-coordinate in the array and are expected to be uniformly distributed if the array data has good quality. The rank scale is applied for plotting as it has the potential to amplify patterns that are small in amplitude but systematic within an array.
 
-Normally, when the features are distributed randomly on the arrays, one expects to see a uniform distribution; control features with particularly high or low intensities may stand out. The rank scale is applied for plotting as it has the potential to amplify patterns that are small in amplitudebut systematic within an array.
+The affy package is required to obtain the AffyBatch object that contains information of spatial x- and y-coordinate, while this function is not implemented in the oligo package.
 
-This step is an **Affymetrix microarry-specific QC step**, as the AffyBatch object from affy package contains information of spatial x- and y-coordinate that is not implemented in oligo package.
-
-1. Compute spatial x- and y-coordinate using raw data object classed as AffyBatch 
-```{r eval=T,message=F,warning=F}
-library(affy)
-affy_spatial <- function(affybatch) {
-  maxc = ncol(affybatch) # number of probes in x-coordinate
-  maxr = nrow(affybatch) # number of probes in y-coordinate
+```{r spatial_utility, eval=T, echo=F}
+# The affyspatial_func function computes spatial x- and y-coordinate using raw data object classed as AffyBatch
+affyspatial_func <- function() {
+  library(affy)
+  raw.data.affy <- read.affybatch(celfiles,compress=T)
+  maxc = ncol(raw.data.affy) # number of probes in x-coordinate
+  maxr = nrow(raw.data.affy) # number of probes in y-coordinate
   sx = rep(seq_len(maxc), each = maxr) ## spatial x-coordinate
   sy = rep(seq_len(maxr), maxc) ## spatial y-coordinate
-  M = log2(affy::exprs(affybatch))
+  M = log2(affy::exprs(raw.data.affy))
+  detach("package:affy", unload=TRUE)
   numArrays = dim(M)[2]
-  list(M=M,numArrays=numArrays,sx=sx,sy=sy)
+  return(list(M=M,numArrays=numArrays,sx=sx,sy=sy))
 }
-raw.data.spatial <- affy_spatial(raw.data.affy)
-detach("package:affy", unload=TRUE) # detach affy package
-```
 
-2. Outlier detection
-
-Compute the sum of the absolutes value of low frequency Fourier coefficients (Fa) across all the probes as a measure of large scale spatial structures. Detect outliers that have a Fa greater than the threshold.
-
-```{r eval=T}
-outlier_detection_spatial <- function(affy_spatial_list) {
+# The outlier_spatial_func function computes the Fourier coefficients for outlier detection
+outlier_spatial_func <- function(affy_spatial_list) {
   sx=affy_spatial_list$sx # spatial x-coordinate
   sy=affy_spatial_list$sy # spatial y-coordinate
   M=affy_spatial_list$M
@@ -564,99 +642,119 @@ outlier_detection_spatial <- function(affy_spatial_list) {
   th = (stats[4] + coef * iqr)
   list(threshold = th, stats=stat_spatial, outlier = which(stat_spatial > th))
 }
-outlier_res_spatial=outlier_detection_spatial(raw.data.spatial)
-outlier_spatial=names(outlier_res_spatial$outlier)
+
+# The spatplot_func function plots samples with the first 4 highest and lowest values of Fa. The value of Fa for each sample is shown in the panel headings.
+spatplot_func <- function(raw.data.spatial,outlier_res) {
+  # select arrays with top 4 highest and lowest Da
+  stats_order <- order(outlier_res$stats)
+  column_sel <- stats_order[c(1:4,(ncol(raw.data.spatial$M)-3):ncol(raw.data.spatial$M))]
+  stats_sel <- round(outlier_res$stats[column_sel],2)
+  M_sel <- raw.data.spatial$M[,column_sel]
+  # apply rank to expression data
+  M_sel = apply(M_sel, 2, rank)
+  # use * to mark the outliers
+  array_name=shortname_func(colnames(M_sel))
+  outlier_spatial=shortname_func(names(outlier_res$outlier))
+  array_name[array_name%in%outlier_spatial] <- paste0("*",array_name[array_name%in%outlier_spatial])
+  array_name <- paste0(array_name," (F=",stats_sel,")") # add F statistics to corresponding samples
+  # create variables for plot
+  df <- data.frame(
+    sample_id=rep(array_name,each=nrow(M_sel)),
+    M=as.numeric(M_sel),
+    row=rep(raw.data.spatial$sy,ncol(M_sel)),
+    column=rep(raw.data.spatial$sx,ncol(M_sel))
+  )
+  # spatial distribution plots
+  ggplot(df,aes(x=row,y=column,fill=M)) + geom_tile() + 
+    theme_bw() +
+    xlab("Raw Probe Intensiry in X") + ylab("Raw Probe Intensiry in Y") +
+    scale_fill_gradientn(name="Ranked Intensity",colours=viridis(256,option="B")) +
+    facet_wrap(~sample_id,ncol=2)
+}
+
+# The spatial_func function outputs spatial metrics
+spatial_func <- function() {
+  raw.data.spatial=affyspatial_func()
+  outlier_res=outlier_spatial_func(affy_spatial_list=raw.data.spatial)
+  outlier=names(outlier_res$outlier)
+  plot=spatplot_func(raw.data.spatial=raw.data.spatial,outlier_res=outlier_res)
+  return(list(outlier=outlier,plot=plot))
+}
+```
+
+
+1. Outlier detection for spatial plots
+
+Outlier detection is applied by computing a sum of the absolute values of low frequency Fourier coefficients (Fa) across all probe sets for each array, where an array with a Fa beyond the upper whisker is designated as an outlier.
+
+```{r spatial_outlier, eval=T, echo=F, message=F, warning=F}
+res_spatial=spatial_func()
+outlier_spatial=res_spatial$outlier
+cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
+if (length(outlier_spatial)>0) {cat("They are: ", outlier_spatial)}
 ```
   
-3. Spatial distribution plots
+2. Spatial distribution plots
 
-The spatial distribution plots show samples with the first 4 highest and lowest values of Fa. The value of Fa for each sample is shown in the panel headings. Outliers marked with * have Fa values of large scale spatial structures.
+Spatial distribution plots of samples with the 4 highest and lowest values of Fa. The value of Fa for each sample is shown in the panel headings. Outliers marked with * have Fa values of large scale spatial structures.
 
-```{r eval=T, fig.height=10, fig.width=7}
-# select arrays with top 4 highest and lowest Da
-stats_order <- order(outlier_res_spatial$stats)
-column_sel <- stats_order[c(1:4,(ncol(raw.data.spatial$M)-3):ncol(raw.data.spatial$M))]
-stats_sel <- round(outlier_res_spatial$stats[column_sel],2)
-M_sel <- raw.data.spatial$M[,column_sel]
-# apply rank to expression data
-M_sel = apply(M_sel, 2, rank)
-# use * to mark the outliers
-array_name <- colnames(M_sel)
-array_name[array_name%in%outlier_spatial] <- paste0("*",array_name[array_name%in%outlier_spatial])
-array_name <- paste0(array_name," (F=",stats_sel,")") # add F statistics to corresponding samples
-# create variables for plot
-df <- data.frame(
-  sample_id=rep(array_name,each=nrow(M_sel)),
-  M=as.numeric(M_sel),
-  row=rep(raw.data.spatial$sy,ncol(M_sel)),
-  column=rep(raw.data.spatial$sx,ncol(M_sel))
-)
-# spatial distribution plots
-ggplot(df,aes(x=row,y=column,fill=M)) + geom_tile() + 
-  theme_bw() +
-  xlab("Raw Probe Intensiry in X") + ylab("Raw Probe Intensiry in Y") +
-  scale_fill_gradientn(name="Ranked Intensity",colours=viridis(256,option="B")) +
-  facet_wrap(~sample_id,ncol=2)
-rm(raw.data.spatial,df)
+```{r spatial_plot, eval=T, echo=F, fig.height=10, fig.width=7}
+res_spatial$plot
 ```
 
-### Relative Log Expression (RLE) Outlier Detection and Plots
-The RLE values are computed by calculating for each probe-set the ratio between the expression of a probe-set and the median expression of this probe-set across all arrays of the experiment.
+### Relative Log Expression (RLE) Distribution
 
-It is assumed that most probe-sets are not changed across the arrays, so it is expected that these ratios are around 0 on a log scale.
+The normalized unscaled standard error (NUSE) and relative log expression (RLE) boxplots indicate probe set homogeneity in one array, where the metrics are derived from a fitted probe level model by the fitProbeLevelModel function (oligo). The RLE plots represent the distribution of the ratio between the log-intensity of a probe set and the median log-intensity of the corresponding probe set across all arrays, expected to be centered near 0, as a log scale is applied. Outlier detection is applied by computing a Kolmogorov-Smirnov statistic (Ra) between RLE distribution for one array and the pooled array data, where an array with a Ra beyond the upper whisker is designated as an outlier 
 
-The boxplots presenting the distribution of these log-ratios should then be centered near 0 and have similar spread. Other behavior would be a sign of low quality.
-
-1. Compute RLE
-
-First, fit probe level models for quality assessment using fitProbeLevelModel from Oligo package. Then, use RLE and NUSE functions to compute the RLE and NUSE values respectively.
-```{r eval=T, warning=F, message=F}
-raw.data2 <- raw.data # As fitPLM needs ExpressionFeatureSet object as an input, assign log transformed expression values to a new object "raw.data2"
-exprs(raw.data2) <- raw.data.log2
-fitPLM <- fitProbeLevelModel(raw.data)
-fitPLM
-rm(raw.data2)
-M_RLE <- RLE(fitPLM, type="values") # generate RLE matrix
-Mss_RLE <- subsamp(M_RLE) # use subsamp function to reduce RLE data with randomly selected 20000 probes
+```{r RLE_utility, eval=T, echo=F, warning=F, message=F}
+# The fitPLM_func function generates RLE and NUSE matrices
+fitPLM_func <- function(raw.data) {
+  exprs(raw.data) <- log2(exprs(raw.data)) # The fitProbeLevelModel function needs ExpressionFeatureSet object as an input. Assign log transformed expression values to a new object
+  fitPLM <- fitProbeLevelModel(raw.data)
+  # RLE
+  M_RLE <- RLE(fitPLM, type="values") # generate RLE matrix
+  Mss_RLE <- subsamp(M_RLE,seed=1234) # use the subsamp function to reduce RLE data with randomly selected 20000 probes
+  # NUSE
+  M_NUSE <- NUSE(fitPLM, type="values") # generate NUSE matrix
+  Mss_NUSE <- subsamp(M_NUSE, seed=1234) # use the subsamp function to reduce RLE data with randomly selected 20000 probes
+  return(list(Mss_RLE=Mss_RLE,Mss_NUSE=Mss_NUSE))
+}
+# The RLE_func function outputs RLE metrics
+RLE_func <- function(Mss) {
+  outlier_res=outlier_KS_func(Mss) # compute KS statistics to detect outliers
+  outlier=names(outlier_res$outlier)
+  plot=boxplot_func(Mss,outlier,"RLE")
+  return(list(outlier=outlier,plot=plot))
+}
 ```
 
-2. Outlier detection for RLE
+1. Outlier detection for RLE
 
 Compute the Kolmogorov-Smirnov statistic Ra between each array's (i.e. sample) values (i.e. relative log expression values) and the pooled, overall distribution of the values. Detect outliers that are deviated from the threshold.
 
-```{r eval=T, warning=F}
-outlier_RLE = names(outlier_detection_KS(Mss_RLE)$outlier) # compute KS statistics to detect outliers
+```{r RLE_outlier, eval=T, echo=F, message=F, warning=F}
+fitPLM=fitPLM_func(raw.data)
+res_RLE=RLE_func(Mss=fitPLM$Mss_RLE)
+outlier_RLE=res_RLE$outlier
+cat(length(outlier_RLE), "outlier(s) are detected in RLE metrics.\n")
+if (length(outlier_RLE)>0) {cat("They are: ", outlier_RLE)}
 ```
 
-3. Boxplot for RLE
+2. Boxplot for RLE
 
 Use boxplot_func function to plot RLE. Outliers marked with * have values centered away from 0 and/or are more spread out are potentially problematic.
 
-```{r eval=T, warning=F, message=F,fig.height=10, fig.width=7}
-boxplot_func(Mss_RLE,outlier_RLE,"RLE")
-rm(Mss_RLE)
+```{r RLE_plot, eval=T, echo=F, warning=F, message=F, fig.height=8, fig.width=6}
+res_RLE$plot
 ```
 
 ### Normalized Unscaled Standard Error (NUSE) Outlier Detection and Plots
 
-The NUSE plot represents normalized standard error estimates from the Probe-Level Model (PLM) fit which computes expression measures on a probe set by probe set basis.
+The NUSE plots show the distribution of normalized standard error estimates, expected to be centered near 1. Outlier detection is applied by computing an upper hinge (Na) across all probe sets for each array, where an array with a Na beyond the upper whisker is designated as an outlier.
 
-The standard error estimates are normalized so that the median standard error for each probe set across all arrays is equal to 1. A box plot of NUSE values is drawn for each array in a dataset and allows checking whether all distributions are centered near 1 and whether an array shows a globally higher spread of the NUSE distribution than the other arrays. Typically, a box centered above 1.1 is indicative of an array with quality problems
-
-1. Compute NUSE
-
-```{r eval=T, warning=F, message=F}
-M_NUSE <- NUSE(fitPLM, type="values") # generate NUSE matrix
-Mss_NUSE <- subsamp(M_NUSE) # use subsamp function to reduce RLE data with randomly selected 20000 probes
-```
-
-2. Outlier detection for NUSE
-
-Compute 75% quantile Na of each array's NUSE values Detect outliers that have larger Na deviated from the threshold.
-
-```{r eval=T, warning=F}
-# compute upper 75% quantile as statistics to detect outliers
-outlier_detection_upperquartile = function(exprs) { # matrix (row: NUSE values, col: array (e.g. sample))
+```{r NUSE_utility, eval=T, echo=F, message=F, warning=F}
+# The function outlier_upperquartile_func function computes upper 75% quantile for outlier detection
+outlier_upperquartile_func <- function(exprs) { # matrix (row: NUSE values, col: array (e.g. sample))
   upperquartile = apply(exprs, 2, quantile, na.rm=TRUE, probs=0.75)
   stats = stats::fivenum(upperquartile, na.rm = TRUE) # Tukey's five number summary (minimum, lower-hinge, median, upper-hinge, maximum)
   iqr = diff(stats[c(2, 4)]) # lagged difference between the lower-hinge and upper-hinge
@@ -664,35 +762,44 @@ outlier_detection_upperquartile = function(exprs) { # matrix (row: NUSE values, 
   th = (stats[4] + coef * iqr)
   list(threshold = th, outlier = which(upperquartile > th))
 }
-outlier_NUSE = names(outlier_detection_upperquartile(Mss_NUSE)$outlier) # compute upper 75% quantile statistics to detect outliers
+
+# The NUSE_func function outputs the NUSE metrics
+NUSE_func <- function(Mss) {
+  outlier_res = outlier_upperquartile_func(Mss)
+  outlier=names(outlier_res$outlier)
+  boxplot=boxplot_func(Mss,outlier,"NUSE")
+  return(list(outlier=outlier,boxplot=boxplot))
+}
 ```
 
-3. Boxplot for NUSE
+1. Outlier detection for NUSE
+
+Compute 75% quantile Na of each array's NUSE values Detect outliers that have larger Na deviated from the threshold.
+
+```{r NUSE_outlier, eval=T, echo=F, message=F, warning=F, results="asis"}
+res_NUSE <- NUSE_func(Mss=fitPLM$Mss_NUSE)
+outlier_NUSE = res_NUSE$outlier # compute upper 75% quantile statistics to detect outliers
+cat(length(outlier_NUSE), "outlier(s) are detected in NUSE metrics.\n")
+if (length(outlier_NUSE)>0) {cat("They are: ", outlier_NUSE)}
+```
+
+2. Boxplot for NUSE
 
 Use boxplot_func function to plot RLE. Outliers marked with * have values centered away from 0 and/or are more spread out are potentially problematic.
 
-```{r eval=T, warning=F, message=F,fig.height=10, fig.width=7}
-boxplot_func(Mss_NUSE,outlier_NUSE,"NUSE")
-rm(Mss_NUSE)
+```{r NUSE_plot, eval=T, echo=F, message=F, warning=F, fig.height=8, fig.width=6}
+res_NUSE$boxplot
 ```
 
 ### Distance between Samples and Outlier Detection
 
-Correlation between arrays was evaluated by the performance of hierarchical clustering of arrays. Hierarchical clustering analysis is performed in two steps: first, the distances between all pairs of arrays are computed and second, a tree is created from these distances by repeatedly grouping those (groups of) arrays together that are closest to each other.
+Distance between arrays is evaluated using mean absolute difference of log-intensity between each pair of arrays, where the hierarchical tree between arrays is created based on the distance, which is visualized by a heatmap and dendrogram.
 
-The distance d(ab) between two arrays a and b is computed as the mean absolute difference (L1-distance) between the data of the arrays (using the data from all probes without filtering). In formula, d(ab) = mean | M(ai) - M(bi) |, where M(ai) is the value of the i-th probe on the a-th array.
+The distance d(ab) between two arrays a and b is computed as the mean absolute difference (L1-distance) between the data of the arrays (using the data from all probes without filtering). In the formula (the dist2 function from genefilter package), d(ab) = mean | M(ai) - M(bi) |, where M(ai) is the value of the i-th probe on the a-th array. 
 
-Outlier detection was computed using the sum of the distances to all other arrays, of which samples who have exceptionally large S(a) = Sum(b)d(ab) are outliers. 
-
-1. Compute distance between samples
-
-Distance estimation using [dist2 function](https://github.com/Bioconductor-mirror/genefilter/blob/master/R/dist2.R) derived from genefilter R package
-```{r eval=T, warning=F}
-# dist2 estimation
-dist2 = function (x,
-                  fun = function(a, b) mean(abs(a - b), na.rm = TRUE),
-                  diagonal = 0) {
-
+```{r dist_utility, eval=T, echo=F, warning=F}
+# The dist2 estimates distance between samples
+dist2 <- function (x,fun = function(a, b) mean(abs(a - b), na.rm = TRUE),diagonal = 0) {
   if (!(is.numeric(diagonal) && (length(diagonal) == 1)))
     stop("'diagonal' must be a numeric scalar.")
 
@@ -709,14 +816,9 @@ dist2 = function (x,
   colnames(res) = rownames(res) = colnames(x)
   return(res)
 }
-m <- dist2(raw.data.log2)
-dend = as.dendrogram(hclust(as.dist(m), method = "single"))
-ord = order.dendrogram(dend)
-```
 
-2. Outlier detection for sample distance
-```{r eval=T}
-outlier_detection_dist = function(exprs) { # matrix (row: distance to each sample, col: array (e.g. sample))
+# The outlier_dist_func function computes the sum of all distance of one sample to other samples for outlier detection
+outlier_dist_func <- function(exprs) { # matrix (row: distance to each sample, col: array (e.g. sample))
   sum = colSums(exprs, na.rm=TRUE) # sum the total distance
   stats = stats::fivenum(sum, na.rm = TRUE) # Tukey's five number summary (minimum, lower-hinge, median, upper-hinge, maximum)
   iqr = diff(stats[c(2, 4)]) # lagged difference between the lower-hinge and upper-hinge
@@ -724,224 +826,205 @@ outlier_detection_dist = function(exprs) { # matrix (row: distance to each sampl
   th = (stats[4] + coef * iqr)
   list(threshold = th, outlier = which(sum > th))
 }
-outlier_dist = names(outlier_detection_dist(m)$outlier)
+
+# The displot_func function plots distance between samples
+distplot_func <- function(m,outlier) {
+  dend = as.dendrogram(hclust(as.dist(m), method = "single"))
+  ord = order.dendrogram(dend)
+  array_name=shortname_func(colnames(m))
+  outlier=shortname_func(outlier)
+  array_name[array_name%in%outlier] <- paste0("*",outlier)
+  array_name <- gsub(".CEL.gz|.cel.gz","",array_name) # shorten the sample id
+  status.cols <- unlist(lapply(pData(raw.data)$ScanDate_Group,function(x)colour_list[x])) # colour list to corresponding scan date list
+  heatmap.2(m,Rowv=dend,Colv=dend,
+    col=viridis(256, option="B"),ColSideColors=status.cols,RowSideColors=status.cols,
+    labCol=array_name,labRow=array_name,
+    trace="none",
+    margins=c(12,20), # (bottom margin, left margin)
+    cexRow = 1,cexCol = 1,
+    keysize=1.5,key.title=NA,key.xlab="Dist2",key.ylab="Counts")
+  legend("bottomleft",legend=names(colour_list),fill=colour_list,cex=0.6)
+}
+
+# The dist_func function outputs distance metrics
+dist_func <- function() {
+  m <- dist2(log2(exprs(raw.data)))
+  outlier_res=outlier_dist_func(m)
+  outlier=names(outlier_res$outlier)
+  return(list(outlier=outlier,m=m))
+}
 ```
 
-3. Plot distance between samples
-```{r eval=T, fig.height=10, fig.width=12}
-array_name <- colnames(m)
-array_name[array_name%in%outlier_dist] <- paste0("*",outlier_dist)
-array_name <- gsub(".CEL.gz|.cel.gz","",array_name) # shorten the sample id
-status.cols <- unlist(lapply(pData(raw.data)$ScanDate_Group,function(x)colour_list[x])) # colour list to corresponding scan date list
-heatmap.2(m,,Rowv=dend,Colv=dend,
-  col=viridis(256, option="B"),ColSideColors=status.cols,RowSideColors=status.cols,
-  labCol=array_name,labRow=array_name,
-  trace="none",
-  margins=c(12,20), # (bottom margin, left margin)
-  cexRow = 1,cexCol = 1,
-  keysize=1.5,key.title=NA,key.xlab="Dist2",key.ylab="Counts")
-legend("bottomleft",legend=names(colour_list),fill=colour_list,cex=0.6)
-rm(m)
+1. Outlier detection for sample distance
+
+Outlier detection is applied by computing the sum of the distances of one array to all other arrays (Sa) (Sa=Sum(b)d(ab)), where an array with a Sa beyond the upper whisker is designated as an outlier.
+
+```{r dist_outlier, eval=T, echo=F}
+res_dist=dist_func()
+outlier_dist=res_dist$outlier
+cat(length(outlier_dist), "outlier(s) are detected in sample distance metrics.\n")
+if (length(outlier_dist)>0) {cat("They are: ", outlier_dist)}
+```
+
+2. Plot distance between samples
+```{r dist_plot, eval=T, echo=F, fig.height=10, fig.width=12}
+distplot_func(m=res_dist$m,outlier=res_dist$outlier)
 ```
 
 ### Principal Component Analysis (PCA)
-PCA plots the information contained in the dataset in a reduced number of dimensions. Clustering and PCA plots enable the assessment to what extent arrays resemble each other, and whether this corresponds to the known resemblances of the samples.
+
+PCA demonstrates information of the expression dataset in a reduced number of dimensions. Clustering and PCA plots enable to assess to what extent arrays resemble each other, and whether this corresponds to the known resemblances of the samples.
+
+```{r pca_utility, eval=T, echo=F}
+# The pcastat_func function computes principal components
+pcastat_func <- function() {
+  # obtain original expression data
+  raw.data.pca <- na.omit(log2(exprs(raw.data)))
+  # As scale function divides by the variance, the probe with the expression sd=0 across samples must be removed.
+  sd <- apply(raw.data.pca,1,sd)
+  raw.data.pca <- raw.data.pca[!sd==0,]
+  # compute pcs
+  pca <- prcomp(t(raw.data.pca), retx = TRUE, center = TRUE, scale = TRUE)
+  pc <- data.frame(pca$x)
+  # compute variance explained by each PC
+  vars <- pca$sdev^2
+  pcs <- t(pc)
+  pvars <- vars*100.0/sum(vars) # proportion of variance (%) explained by each PC
+  cumsum_pvars <- cumsum(pvars) # Cumulative Proportion of Variance (%)
+  if (nrow(pcs)>10) {nres <- 10} else {nres=nrow(pcs)} # select top 10 PCs if number of PCs >10
+  res <- data.frame(rownames(pcs),pvars,cumsum_pvars)[1:nres,]
+  names(res) <- c("PC","Proportion of Variance (%)","Cumulative Proportion of Variance (%)")
+  return(list(tb=res,pc=pc))
+}
+
+# The pcaplot_func creates plots for pc1 and pc2
+pcaplot_func <- function(pc, group_var,legend) { # group_var: column name for a specific group; legend: legend name
+  df <- data.frame(
+    PC1=pc$PC1,
+    PC2=pc$PC2,
+    group=pData(raw.data)[,group_var]
+  )
+  i=length(levels(pData(raw.data)[,group_var]))
+  group_col <- colours[1:i]
+  names(group_col) <- levels(pData(raw.data)[,group_var]) # colour to corresponding group for plot
+  ggplot(df,aes(PC1,PC2,color=group)) + geom_point() +
+    theme_bw() +
+    scale_color_manual(legend,values=group_col,na.value="grey")
+}
+
+# The pca_func function generates multiple pca plots for scan date, disease, treatment, and subject
+pca_func <- function(pc) {
+  group_vars=c("ScanDate_Group", "Disease", "Treatment", "Subject")
+  legends=c("ScanDate_Group", "Disease", "Treatment", "Donor")
+  idx_exist=c(1:length(group_vars))[group_vars%in%names(pData(raw.data))] # obtain index of existing variables
+  plot_list=list() # store plots in a list
+  for (i in idx_exist) {
+    group_var=group_vars[i]
+    legend=legends[i]
+    nlevel=nlevels(pData(raw.data)[,group_var]) # levels of the variable
+    if (nlevel>=2&nlevel<=10) {
+      plot_list[[group_var]]=pcaplot_func(pc, group_var=group_var,legend=legend)
+    }
+  }
+  return(plot_list)
+}
+```
+
 
 1. Compute PCs and variance explained by the first 10 PCs
-```{r eval=T, warning=F, message=F, results="asis"}
-# obtain original expression data
-raw.data.pca <- na.omit(raw.data.log2)
-# As scale function divides by the variance, the probe with the expression sd=0 across samples must be removed.
-sd <- apply(raw.data.pca,1,sd)
-raw.data.pca <- raw.data.pca[!sd==0,]
-# compute pcs
-pca <- prcomp(t(raw.data.pca), retx = TRUE, center = TRUE, scale = TRUE)
-pc <- data.frame(pca$x)
-# compute variance explained by each PC
-vars <- pca$sdev^2
-pcs <- t(pc)
-pvars <- vars*100.0/sum(vars) # proportion of variance (%) explained by each PC
-cumsum_pvars <- cumsum(pvars) # Cumulative Proportion of Variance (%)
-if (nrow(pcs)>10) {nres <- 10} else {nres=nrow(pcs)} # select top 10 PCs if number of PCs >10
-res <- data.frame(rownames(pcs),pvars,cumsum_pvars)[1:nres,]
-names(res) <- c("PC","Proportion of Variance (%)","Cumulative Proportion of Variance (%)")
-pandoc.table(res,split.table = Inf)
-rm(raw.data.pca)
+
+```{r pca_tb, eval=T, echo=F, warning=F, message=F, results="asis"}
+res_pca <- pcastat_func()
+pandoc.table(res_pca$tb,split.tables=Inf, caption="Variance explained")
 ```
 
 2. PCA plots
 
-PCA plots by scan date
-```{r eval=T}
-cols <- colour_list
-df <- data.frame(
-  PC1=pc$PC1,
-  PC2=pc$PC2,
-  scandate=pData(raw.data)$ScanDate_Group
-)
-ggplot(df,aes(PC1,PC2,color=scandate)) + geom_point() +
-  theme_bw() +
-  scale_color_manual("Scan Date",values=cols)
+PCA plots are generated using the first two principle components colored by known factors (e.g. treatment/disease conditions, donors and scan dates), visualizing similarities between arrays and these similarities' correlation to batch effects.
+
+```{r pca_plot, eval=T, echo=F}
+plot_list=pca_func(pc=res_pca$pc)
+for (i in plot_list) {print(i)}
 ```
 
-PCA plots by treatment if more than 2 subjects involving in the same treatment condition
-```{r eval=T}
-if(("Treatment"%in%colnames(pData(raw.data)))&(min(summary(pData(raw.data)$Treatment))>2)) {
-  # Assign colour to treatment status
-  i=nlevels(pheno$Treatment)
-  colour_treat <- colours[1:i]
-  names(colour_treat) <- levels(pData(raw.data)$Treatment) 
-  cols <- colour_treat
-  df <- data.frame(
-    PC1=pc$PC1,
-    PC2=pc$PC2,
-    group=pData(raw.data)$Treatment
-  )
-  ggplot(df,aes(PC1,PC2,color=group)) + geom_point() +
-    theme_bw() +
-    scale_color_manual("Treatment",values=cols)
-}
-```
-
-PCA plots by donor if the same donor involving in more than 2 tissue/treatment conditions
-```{r eval=T}
-pData(raw.data)$Subject<-as.factor(pData(raw.data)$Subject)
-if(("Treatment"%in%colnames(pData(raw.data)))&(min(summary(pData(raw.data)$Subject))>2)) {
-  # Assign colour to subject status
-  i=nlevels(pData(raw.data)$Subject)
-  colour_subj <- colours[1:i]
-  names(colour_subj) <- levels(pheno$Subject) 
-  cols <- colour_subj
-  df <- data.frame(
-    PC1=pc$PC1,
-    PC2=pc$PC2,
-    group=pData(raw.data)$Subject
-  )
-  ggplot(df,aes(PC1,PC2,color=group)) + geom_point() +
-    theme_bw() +
-    scale_color_manual("Donor",values=cols)
-}
-rm(pca)
-```
 
 ### QC Summary
 
-Summary outliers and detection methods in a table
-```{r eval=T, results="asis"}
-outlier_all <- c(outlier_raw,outlier_MA,outlier_spatial,outlier_RLE,outlier_NUSE,outlier_dist) # all outliers
-if (length(outlier_all)==0) {
-  message("No outlier was detected")
-  outlier_freq <- data.frame() # create an empty data frame
-} else {
-  outlier_method <- c(rep("Raw Probe Intensity",length(outlier_raw)),
-    rep("MA",length(outlier_MA)),
-    rep("Spatial Distribution",length(outlier_spatial)),
-    rep("RLE",length(outlier_RLE)),
-    rep("NUSE",length(outlier_NUSE)),
-    rep("Dist2",length(outlier_dist))) # detection methods for the outliers
-  outlier_list <- list() # create empty list to store outliers and their corresponding methods
-  for (i in 1:length(outlier_all)){outlier_list[[outlier_all[i]]] <- append(outlier_list[[outlier_all[i]]],outlier_method[i])} # assign methods to each outlier
-  # summary table
-  Frequency <- sapply(outlier_list,length) # times to detect
-  Method <- unlist(lapply(names(outlier_list),function(x){paste0(outlier_list[[x]],collapse=", ")}))
-  outlier_freq <- data.frame(Frequency,Method)
-  pandoc.table(outlier_freq[order(outlier_freq$Frequency),],caption="Outlier Summary",split.table = Inf)
-}
-```
-
-## Prepare Phenotype Data with QC
-Create a new column "QC_Pass" in phenotype data. Samples detected as outliers more than twice are assigned to 0 otherwise to 1.
-```{r eval=T,results="asis"}
-if (nrow(outlier_freq)==0) { # if no outlier was detected
-  pData(raw.data)$QC_Pass <- rep(1,nrow(pData(raw.data))) # assign 1 to all the samples 
-} else {
-  outliers <- row.names(outlier_freq)[which(outlier_freq$Frequency>2)] # remove samples that were detected as an outlier more than twice
-  pData(raw.data)$QC_Pass <- rep(NA,nrow(pData(raw.data))) # add column QC_Pass in phnotype data
-  pData(raw.data)$QC_Pass[rownames(pData(raw.data))%in%outliers] <- 0 # assign 0 to outliers to be removed
-  pData(raw.data)$QC_Pass[!rownames(pData(raw.data))%in%outliers] <- 1 # assign 1 to samples to be kept
-}
-pandoc.table(pData(raw.data),split.table = Inf)
-pData(raw.data)$Filename <- rownames(pData(raw.data)) # add filename in a new column
-```
-
-Save in a new phenotype file
-```{r eval=T}
-write.table(pData(raw.data),paste0(datadir,"/",geo_id,"_Phenotype_withQC.txt"),col.names=T,row.names=F,sep="\t",quote=F)
-```
-
-Create variables for subsetting phenotype data into separate comparison groups
-(e.g. asthma vs. healthy, rhinitis vs. healthy). Assign NULL values if the
-corresponding disease/treatment status is not available. This is a **manual** step.
-
-```{r eval=T}
-disease_con1 <- NULL
-disease_con0 <- NULL
-treatment_con1 <- c("dex_24hr","dex_2hr","dex_30min","dex_4hr")
-treatment_con0 <- c("baseline_24hr","baseline_2hr","baseline_30min","baseline_4hr")
-```
-
-Subset phenotype file by tissue, disease status and treatment (if available). Differential gene expression analysis will be performed in a separate group.
-
-Use subdat function to subset phenotype file into separate files than only contain one tissue type, one treatment/disease status of the disease vs. healthy/treatment vs. baseline comparison.
-
-The phenotype file is named as: geo_id + Tissue + Disease/Treatment status (if available) + treatment vs baseline/disease vs healthy
-
-```{r eval=T}
-subdat <- function(pheno) {
-  tissues=levels(pheno$Tissue)
-  for (t in tissues) {
-    pheno_tis <- pheno[pheno$Tissue==t,]
-    if (!is.null(disease_con1)&(!is.null(treatment_con1))) { # Data contains both disease status and treatment
-      for (tr in levels(as.factor(c(treatment_con1,treatment_con0)))) { # under the same treatment, get disease and healthy samples
-        pheno_tr <- pheno_tis[pheno_tis$Treatment==tr,]
-        for (i in 1:length(disease_con1)) {
-          if (disease_con1[i]%in%pheno_tr$Disease&disease_con0[i]%in%pheno_tr$Disease) { # under the same treatment, if the data contains both disease and healthy
-  	        pheno_dis <- pheno_tr[pheno_tr$Disease%in%c(disease_con1[i],disease_con0[i]),]
-  	        name <- paste0(resdir,"/",geo_id,"_",t,"_",tr,"_",disease_con1[i],"_vs_",disease_con0[i],".txt")
-            write.table(pheno_dis,name,col.names=T,row.names=F,sep="\t",quote=F)
-  	      }
-        }
-      }
-      for (dis in levels(as.factor(c(disease_con1,disease_con0)))) { # under the same disease status, get treatment and baseline samples
-        pheno_dis <- pheno_tis[pheno_tis$Disease==dis,]
-        for (i in 1:length(treatment_con1)) {
-          if (treatment_con1[i]%in%pheno_dis$Treatment&treatment_con0[i]%in%pheno_dis$Treatment) { # under the same disease status, if the data contains both treatment and baseline
-  	        pheno_tr <- pheno_dis[pheno_dis$Treatment%in%c(treatment_con1[i],treatment_con0[i]),]
-  	        name <- paste0(resdir,"/",geo_id,"_",t,"_",dis,"_",treatment_con1[i],"_vs_",treatment_con0[i],".txt")
-            write.table(pheno_tr,name,col.names=T,row.names=F,sep="\t",quote=F)
-          }
-        }
-      }
-    }
-    if (!is.null(disease_con1)&(is.null(treatment_con1))) { # Data only contains disease status
-      for (i in 1:length(disease_con1)) {
-        if (disease_con1[i]%in%pheno_tis$Disease&disease_con0[i]%in%pheno_tis$Disease) { # if the data contains both disease and healthy samples
-          pheno_dis <- pheno_tis[pheno_tis$Disease%in%c(disease_con1[i],disease_con0[i]),]
-          name <- paste0(resdir,"/",geo_id,"_",t,"_",disease_con1[i],"_vs_",disease_con0[i],".txt")
-          write.table(pheno_dis,name,col.names=T,row.names=F,sep="\t",quote=F)
-        }
-      }
-    }
-    if (is.null(disease_con1)&(!is.null(treatment_con1))) { # Data only contains treatment status
-      for (i in 1:length(treatment_con1)) {
-        if (treatment_con1[i]%in%pheno_tis$Treatment&treatment_con0[i]%in%pheno_tis$Treatment) { # if the data contains both treatment and baseline samples
-          pheno_tr <- pheno_tis[pheno_tis$Treatment%in%c(treatment_con1[i],treatment_con0[i]),]
-          name <- paste0(resdir,"/",geo_id,"_",t,"_",treatment_con1[i],"_vs_",treatment_con0[i],".txt")
-          write.table(pheno_tr,name,col.names=T,row.names=F,sep="\t",quote=F)
-        }
-      }
-    }
+```{r qcsumm_utility, eval=T, echo=F}
+# The outlier_summ_func function outputs a summary table of outlier and the detected frequency
+outlier_summ_func <- function() {
+  outlier_all <- c("outlier_intensity","outlier_MA","outlier_spatial","outlier_RLE","outlier_NUSE","outlier_dist") # all outliers
+  outlier_env=ls(envir=.GlobalEnv, pattern="outlier_") # "outlier_" enviromental variables
+  outlier=outlier_env[outlier_env%in%outlier_all]
+  method=gsub("outlier_","",outlier)
+  outliers=unlist(lapply(1:length(outlier),function(x){get(outlier[x],envir=.GlobalEnv)}))
+  if (length(outliers)==0) {
+    cat("No outlier was detected\n")
+    res <- data.frame() # create an empty data frame
+  } else {
+    methods=unlist(lapply(1:length(outlier),function(x){n=length(get(outlier[x]));rep(method[x],n)}))
+    outlier_list=list()
+    for (x in 1:length(outliers)){outlier=outliers[x];method=methods[x];outlier_list[[outlier]]=append(outlier_list[[outlier]],method)}
+    # summary table
+    Frequency <- sapply(outlier_list,length) # times to detect
+    Method <- unlist(lapply(names(outlier_list),function(x){paste0(outlier_list[[x]],collapse=", ")}))
+    res <- data.frame(Frequency,Method)
+    res <- res[order(res$Frequency),]
   }
+  return(res)
 }
-subdat(pData(raw.data))
+
+# The tbQC_func function
+tbQC_func <- function(outliers) { # define outliers
+  tb=pData(raw.data)
+  tb$QC_Pass=1
+  if (missing(outliers)) { # if outliers are not defined, use those detected more than twice
+    tb$QC_Pass[rownames(tb)%in%rownames(outlier_tb)[outlier_tb$Frequency>2]]<-0 # assign 0 to outliers detected more than twice
+  } else {
+    tb$QC_Pass[rownames(tb)%in%outliers]<-0
+  }
+  tb$Filename <- rownames(tb) # add filename in a new column
+  pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt") # save in a new phenotype file
+  write.table(tb,pheno_fn,col.names=T,row.names=F,sep="\t",quote=F)
+  # defined outliers
+  outlier=as.character(tb$GEO_ID)[which(tb$QC_Pass==0)]
+  # summary of phenotype information before QC
+  vars=c("Tissue","Treatment","Disease","QC") # variables of interest
+  # before QC
+  tb_withoutQC=as.data.frame(table(tb[,names(tb)%in%vars]))
+  names(tb_withoutQC)[ncol(tb_withoutQC)]="Counts"
+  # after QC
+  tb_withQC=as.data.frame(table(tb[which(tb$QC==1),names(tb)%in%vars]))
+  names(tb_withQC)[ncol(tb_withQC)]="Counts"
+  return(list(outlier=outlier, tb_withoutQC=tb_withoutQC, tb_withQC=tb_withQC))
+}
 ```
 
-Show all the generated separate phenotype files
-```{r eval=T}
-list.files(path=resdir,pattern=paste0("^",geo_id,".*","_vs_",".*","\\.txt"))
+The summary of outliers and detection methods
+
+```{r outliersum, eval=T, echo=F, results="asis"}
+outlier_tb=outlier_summ_func()
+if (nrow(outlier_tb)>0) {
+  pandoc.table(outlier_tb,caption="Outlier Summary",split.tables=Inf)
+}
 ```
 
-Session information
-```{r eval=T}
-sessionInfo()
+Create a new column "QC_Pass" in the phenotype file. By default, samples detected as an outlier more than twice are assigned to 0 otherwise to 1.
+
+```{r qcsumm1, eval=T, echo=F}
+res_tbQC=tbQC_func()
+outlier=res_tbQC$outlier
+cat(length(outlier), "outlier(s) are defined.\n")
+if (length(outlier)>0) {cat("They are: ", outlier)}
+```
+
+```{r qcsumm2, eval=T, echo=F, results="asis"}
+pandoc.table(res_tbQC$tb_withoutQC, split.tables=Inf, caption="Summary of samples without QC")
+pandoc.table(res_tbQC$tb_withQC, split.tables=Inf, caption="Summary of samples with QC")
+```
+
+#### Session information
+
+```{r sessioninfo, eval=T, echo=F}
+pander(sessionInfo())
 ```

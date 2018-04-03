@@ -14,7 +14,7 @@ RAVED (Reproducible Analysis and Validation of Expression Data) is a pipeline th
 * Differential Expression (DE) Analysis
 
 ## Microarray Data Analysis
-Several freely accessible R packages for microarray data analysis are used in this pipeline. We use GEO dataset GSE4917 as an example and provide two R Markdown templates to reproduec the analysis pipeline and reports for GSE4917. The template_QC_report.Rmd script goes first including the steps of raw data download, phenotype file preparation, and QC. The template_DE_analysis_report.Rmd takes the output from the template_QC_report.Rmd and performs the DE analysis of the comparison of interest. The RMD files for other microarray data used for our integrative analysis of transcriptomic data asthma and glucocorticoid response can be found in the folder microarray.
+Several freely accessible R packages for microarray data analysis are used in this pipeline. We use GEO dataset GSE4917 as an example and provide two R Markdown templates to reproduce the analyses and two .html summary reports. The template_QC_report.Rmd script goes first including the steps of GEO data download, phenotype file preparation, and quality metrics measurement. The template_DE_analysis_report.Rmd takes the phenotype file obtained from the template_QC_report.Rmd and performs the differential expression analysis. The RMD files for other microarray data used for the integration analysis of asthma transcriptomic data are available on GitHub [Asthma_Transcriptomic_Analysis](https://github.com/HimesGroup/Asthma_Transcriptomic_Analysis).
 
 Prerequisite R packages for microarray data analysis include:
 * Data download: GEOquery
@@ -81,6 +81,8 @@ Prerequisite tools for RNA-Seq data analysis include:
 * DE analysis: DESeq2 or sleuth
 * Gene annotation: BioMart
 
+The RNA-Seq data analysis pipeline is available on GitHub [taffeta](https://github.com/HimesGroup/taffeta).
+
 ## Description of files in repository
 `template_QC_report.Rmd`: R markdown codes for GSE4917 QC analysis
 
@@ -89,5 +91,3 @@ Prerequisite tools for RNA-Seq data analysis include:
 `template_DE_analysis_report.Rmd`: R markdown codes for GSE4917 DE analysis
 
 `template_DE_analysis_report.html`: HTML report for GSE4917 DE analysis
-
-`microarray folder` contains the RMD files for other microarray datasets used for our integrative analysis of transcriptomic data asthma and glucocorticoid response
