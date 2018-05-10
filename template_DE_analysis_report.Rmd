@@ -45,6 +45,14 @@ con1="dex_24hr"
 treatment=c(con0,con1)
 # disease. Assign "comparison" if this column is used for DE.
 disease="healthy"
+```
+
+**Note that** three variables, platform (platform), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
+
+```{r var2, eval=T, echo=F}
+platform="Affymetrix"
+usesuppl=TRUE
+normdata=FALSE
 # The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
 shortname_func <- function(x){gsub("^(.*).(cel|CEL).gz","\\1",x)} # remove .cel.gz or .CEL.gz from sample
 ```
@@ -56,8 +64,7 @@ Install the prerequisite R packages if they do not exist
 * limma
 * sva
 * annotate
-* hgu133plus2.db
-* hugene10sttranscriptcluster.db
+* Bioconductor AnnotationData Packages: hgu133plus2.db, hgug4112a.db, hugene10sttranscriptcluster.db
 * viridis (heatmap color)
 * ggplot2
 * gplots (heatmap2 plot)
@@ -74,6 +81,7 @@ biocLite("sva")
 biocLite("annotate")
 biocLite("hgu133plus2.db")
 biocLite("hugene10sttranscriptcluster.db")
+biocLite("hgug4112a.db")
 biocLite("viridis")
 install.packages("ggplot2")
 install.packages("gplots")
@@ -108,7 +116,7 @@ phenosub_func <- function(){
   pheno.sub=subset(pheno,(Tissue%in%tissue)&(Treatment%in%treatment)&(Disease%in%disease))
   pheno.sub=droplevels(pheno.sub)
   # assign comparison to "Status" column
-  if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {pheno.sub$Status=pheno.sub$Treatment} else {pheno.sub$Stuatus=pheno.sub$Disease}
+  if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {pheno.sub$Status=pheno.sub$Treatment} else {pheno.sub$Status=pheno.sub$Disease}
   pheno.sub$Status <-factor(pheno.sub$Status,levels=c(con0,con1))
   return(pheno.sub)
 }
@@ -204,21 +212,75 @@ colour_scandate_list <- unlist(lapply(pheno.of.interest$ScanDate_Group,function(
 
 ### Gene expression data preparation
 
-```{r cel_utility, eval=T, echo=F}
-# The celdownload_func function downloads the .cel files from GEO and unextract the zip file
-celdownload_func <- function() {
+For data from Affymetrix platform, raw probe intensity data from supplementary files (usually .cel files) in GEO are downloaded and used for DE analysis. For data from Agilent platform, the intensity data is derived from GEO expression matrix.
+
+Generate raw.data object using supplementary files (for Affymetrix data).
+
+```{r suppldata_readin, eval=T, echo=F, message=F, warning=F, results="hide"}
+# The suppdownload_func function downloads the supplimentary raw data files from GEO and unextract the zip file
+suppldownload_func <- function() {
   getGEOSuppFiles(geo_id,baseDir=datadir) #download GEO files
   untar(paste0(datadir,"/",geo_id,"/",geo_id,"_RAW.tar"), exdir=paste0(datadir,"/",geo_id,"/data")) # extract the zip file
 }
 
-# The celall_func function obtains all .cel files in the data directory with full path
-celall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=".CEL.gz|.cel.gz",full.names=T)}
-# The sampall_func function obtains all samples whose .cel files exist
-sampall_func <- function() {basename(gsub("^(.*).(cel|CEL).gz","\\1",celall_func()))}
+if (usesuppl) {
+  # The sampall_func function obtains the supplementary filenames of all samples of interest
+  sampall_func <- function() {basename(as.character(pheno$Filename))}
+  # The rawall_func function obtains all files in the data directory with full path
+  rawall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=paste(sampall_func(),collapse="|"),full.names=T)}
 
-# The celreadin_func function reads in raw data as an oligo object
-celreadin_func <- function(celfiles, pheno) {
-  raw.data <- read.celfiles(celfiles)
+  # Download raw data files (e.g. .cel) if available.
+  # Check whether the supplementary files already exist. Otherwise download from GEO
+  samp_exist=basename(rawall_func())
+  samp_need=sampall_func()
+
+  if (length(samp_exist)==0) {
+    suppldownload_func()
+  } else {
+    if (!identical(samp_exist,samp_need)) {suppldownload_func()}
+  }
+  samp_exist=basename(rawall_func()) # updated the existing samples
+  if (!identical(samp_exist,samp_need)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+  
+  # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
+  raw.files=rawall_func()
+  raw.data <- read.celfiles(raw.files)
+}
+```
+
+Generate raw.data object using expression matrix from GEO (for platforms other than Affymetrix).
+
+```{r geomatrix_readin, eval=T, echo=F, message=F, warning=F}
+if (!usesuppl) {
+# check if GEO matrix file exists
+  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
+  if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+    gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
+   
+    if (length(gselms)>1) {  # multiple platform
+      message("This study was performed in multiple platforms")
+      idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
+      gse <- gselms[[idx]]
+    } else {gse <- gselms[[1]]}
+  } else if (length(geo_fn)==1) {
+    gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+  } else { # multiple platform
+    message("This study was performed in multiple platforms")
+    geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
+    gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+  }
+  # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
+  raw.data=gse
+}
+```
+
+Obtain raw.data.of.interest by subsetting raw.data based on the phenotype of interest
+
+```{r sub_rawdata, eval=T, echo=F}
+# The subdat_func function subsets data based on the phenotype of interest
+subdat_func <- function(raw.data, pheno) {
+  # subset raw.data based on the phenotype of interest
+  raw.data=raw.data[,colnames(raw.data)%in%pheno$Filename]
   # assign phenotype data to raw expression data
   pData(raw.data) <- pheno
   row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
@@ -226,27 +288,7 @@ celreadin_func <- function(celfiles, pheno) {
   if (!identical(row.names(pData(raw.data)),as.character(pheno$Filename))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
   return(raw.data)
 }
-```
-
-Download raw data files (.cel) or GEO dataset if they do not exist.
-
-```{r cel_download, eval=T, echo=F, message=FALSE}
-# Check whether the .cel files already exist. Otherwise download from GEO
-celfiles=paste0(datadir,"/",geo_id,"/data/",pheno.of.interest$Filename)
-celfile_exist=celall_func()
-if (length(celfile_exist)==0) {
-  celdownload_func()
-} else {
-  if (length(intersect(celfile_exist,celfiles))!=length(celfiles)) {celdownload_func()}
-}
-celfile_exist=celall_func()
-if (length(intersect(celfile_exist,celfiles))!=length(celfiles)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
-```
-
-Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
-
-```{r cel_readin, eval=T, echo=F, message=F, warning=F, results="hide"}
-raw.data.of.interest=celreadin_func(celfiles=celfiles, pheno=pheno.of.interest)
+raw.data.of.interest=subdat_func(raw.data=raw.data, pheno=pheno.of.interest)
 ```
 
 Show expression dataset features
@@ -258,15 +300,21 @@ raw.data.of.interest
 
 ### Normalize raw gene expression data
 
-Normalize gene expression raw data using robust multi-array average (RMA) method
+Normalize gene expression raw data using robust multi-array average (RMA) method, unless the raw.data object is already normalized (based on the variable normdata).
 
-```{r rma, eval=T, echo=F, message=FALSE, results="hide"}
-rma.data.of.interest = rma(raw.data.of.interest) # perform the RMA
+```{r rma, eval=T, echo=F, message=F, results="hide"}
+if (!normdata) {rma.data.of.interest = rma(raw.data.of.interest)} else {rma.data.of.interest=raw.data.of.interest}
+```
+
+```{r rma_plot, eval=T, echo=F}
 cols=colour_status_list
 boxplot(raw.data.of.interest,target="core",col=cols,main="Raw Probe Intensities",xaxt="n") # view raw data
 legend("topright",legend=names(colour_status),fill=colour_status)
-boxplot(rma.data.of.interest,col=cols,main="RMA Probe Intensities",xaxt="n") # view RMA-adjusted data
-legend("topright",legend=names(colour_status),fill=colour_status)
+
+if (!normdata) {
+  boxplot(rma.data.of.interest,col=cols,main="RMA Probe Intensities",xaxt="n") # view RMA-adjusted data
+  legend("topright",legend=names(colour_status),fill=colour_status)
+} else {cat("The raw data is already normalized")}
 ```
 
 
@@ -295,7 +343,8 @@ fit2=res_DE$fit2
 pandoc.table(data.frame(Sample=rma.data.of.interest$Sample,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
 pandoc.table(as.data.frame(res_DE$data.contrast), caption="A contract matrix for comparison")
 contrast_table <- topTable(fit2, adjust="BH",num=Inf) # get full set of results for each hypothesis test
-contrast_table <- data.frame(ID=row.names(contrast_table), contrast_table)
+col.sel=c("logFC","AveExpr","t","P.Value","adj.P.Val","B") # select the columns of DE results
+contrast_table <- data.frame(ID=row.names(contrast_table), contrast_table[,col.sel])
 ```
 
 ### Adjusting for Batch Effect
@@ -379,41 +428,47 @@ pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " v
 
 #### Assign Official Gene Symbol
 
-Assign official gene symbol using hgu133plus2.db package if anntoation is based onpd.hg.u133a.
+Annotate official gene symbol to probes. Install the [R annotation database package](https://bioconductor.org/packages/3.7/data/annotation/) corresponding to your gene expression data. For any newly installed annotation databases, it can be added to the list anno_list reserved for future use.
 
-Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
-
-Assign official gene symbol using hugene10sttranscriptcluster.db if annotation is based on pd.hugene.1.0.st.v1.
-
-Assign official gene symbol using hugene20sttranscriptcluster.db if annotation is based on pd.hugene.2.0.st.v1.
+```{r anno_list, eval=T, echo=F}
+anno_list=list()
+anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
+anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
+anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
+anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
+anno_list[["GPL6480"]]="hgug4112a.db"
+```
 
 ```{r anno_utility, eval=T, echo=F}
 geneannot_func <- function(tb) {
-  remove.pm <- function(x) {gsub("_PM", "", x)}
-  tb$ID=sapply(as.character(tb$ID), remove.pm)
+  # check if the annotation database is installed
   anno_array=annotation(rma.data.of.interest)
   cat("The platform used is ", anno_array, "\n")
-  if (grepl("u133",anno_array)) {
-    anno_lib="hgu133plus2SYMBOL"
-  } else if (grepl("u133",anno_array)) {
-    anno_lib="hugene10sttranscriptclusterSYMBOL"
-  }
-  tb$SYMBOL=sapply(as.character(tb$ID), function(x) mget(x, env=get(anno_lib), ifnotfound=NA)[[1]])
+  if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
+  anno_lib=anno_list[[anno_array]] # use the annotation database
+  library(anno_lib, character.only=T)
+  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
+  
+  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
+  if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)} 
+  tb$ID=as.character(tb$ID)
+  tb$SYMBOL=sapply(as.character(tb$ID), function(x) mget(x, env=get(anno_symbol), ifnotfound=NA)[[1]])
   tb[order(tb$P.Value),]
 }
 ```
 
-```{r anno_tb, eval=F, echo=F, warning=F,message=F, results="asis"}
-contrast_table <- geneannot_func(tb=contrast_table)
+```{r contrast_fn, eval=T, echo=F}
 contrast_name=infosumm_func(pheno=pheno.of.interest)$name # adopt Unique_ID created in the information summary table
 contrast_fn=paste0(resdir,"/", contrast_name, ".csv")
+```
+
+```{r anno_tb, eval=T, echo=F, warning=F,message=F}
+contrast_table <- geneannot_func(tb=contrast_table)
 write.csv(contrast_table, file=contrast_fn, row.names = FALSE)
 ```
 
-
 ```{r DE_readin, eval=T, echo=F}
-contrast_name=infosumm_func(pheno=pheno.of.interest)$name # adopt Unique_ID created in the information summary table
-contrast_fn=paste0(resdir,"/", contrast_name, ".csv")
+if (file.exists(contrast_fn)) {contrast_fn=paste0(resdir,"/", contrast_name, ".csv")}
 res=read.csv(contrast_fn)
 ```
 
@@ -454,7 +509,7 @@ volplot_func <- function(df,qval_column,title) {
 
 Volcano plot (probes with a q-value <0.05 are present in red)
 
-```{r vol, echo=F, eval=T, fig.height=4, fig.width=4.5}
+```{r vol, eval=T, echo=F, fig.height=4, fig.width=4.5}
 for (qval in c("adj.P.Val","qValuesBatch")) {volplot_func(res, qval)}
 ```
 
@@ -512,10 +567,11 @@ topgene_boxplot_func <- function(tb,colour,comp) { # comp: comparison status
     if (missing(comp)) {comp=""}
     if (missing(colour)) {colour=colours[1]}
     probe_top <- tb$ID[i]
+    gene_top <- tb$SYMBOL[i]
     values=exprs(rma.data.of.interest)[row.names(rma.data.of.interest)%in%probe_top, ]
     status=rma.data.of.interest$Status
     df <- data.frame(values=values,status=status)
-    title=paste0(comp," top ",i," probe ", probe_top)
+    title=paste0(comp," top ",i," probe ", probe_top, " gene ", gene_top)
     print(
       ggplot(df,aes(x=status,y=values)) +
         geom_boxplot(outlier.colour=NA,color="grey18",fill=colour) +
