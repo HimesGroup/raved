@@ -697,7 +697,7 @@ pca_func <- function(oligo.data, pc) {
     group_var=group_vars[i]
     legend=legends[i]
     nlevel=nlevels(pData(oligo.data)[,group_var]) # levels of the variable
-    if (nlevel>=2&nlevel<=10) {
+    if (group_var=="ScanDate_Group"|(nlevel>=2&nlevel<=10)) {
       if (group_var=="Status") {
         plot_list[[group_var]]=pcaplot_func(oligo.data=oligo.data, pc=pc, group_var=group_var,legend=legend)+scale_color_manual(legend,values=colour_status,na.value="grey") # assign colour to comparison stauts
       } else {plot_list[[group_var]]=pcaplot_func(oligo.data=oligo.data, pc=pc, group_var=group_var,legend=legend)}
