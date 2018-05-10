@@ -85,7 +85,7 @@ library(dplyr)
 
 Download the GEO series matrix files if available. 
 
-```{r geo_download, eval=T, echo=F, warning=F, message=F}
+```{r geo_download, eval=T, echo=F, message=F, warning=F}
 # check if GEO matrix file exists
 geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
  if (length(geo_fn)==0) { # matrix files are alreadly downloaded
@@ -269,7 +269,7 @@ if (!(suppldata)) {
 
 **Manual inspection:** Re-define the variable "normdata" (i.e. TRUE or FALSE) showing whether the expression data is normalized or not.
 
-```{r pheno_withoutQC, eval=F, warning=F, echo=F}
+```{r pheno_withoutQC, eval=T, warning=F, echo=F}
 write.table(pheno,paste0(resdir,"/",geo_id,"_Phenotype_withoutQC.txt"),col.names=T,row.names=F,sep="\t",quote=F)
 ```
 
@@ -401,7 +401,7 @@ res_intensity$boxplot
 
 The intensity curves of all samples (arrays) are expected to have the similar shapes and ranges. Samples with deviated curves are likely to have problematic experiments. For example, high levels of background will shift an array's distribution to the right. Lack of signal diminishes its right right tail. A bulge at the upper end of the intensity range often indicates signal saturation.
 
-```{r raw_intensity_densplot, eval=T, echo=F}
+```{r raw_intensity_densplot, eval=T, echo=F, message=F, warning=F}
 res_intensity$densplot
 ```
 
@@ -744,7 +744,7 @@ if (platform=="Affymetrix") {
 
 The normalized unscaled standard error (NUSE) and relative log expression (RLE) boxplots indicate probe set homogeneity in one array, where the metrics are derived from a fitted probe level model by the fitProbeLevelModel function (oligo). The RLE plots represent the distribution of the ratio between the log-intensity of a probe set and the median log-intensity of the corresponding probe set across all arrays, expected to be centered near 0, as a log scale is applied. Outlier detection is applied by computing a Kolmogorov-Smirnov statistic (Ra) between RLE distribution for one array and the pooled array data, where an array with a Ra beyond the upper whisker is designated as an outlier 
 
-```{r RLE_utility, eval=T, echo=F, warning=F, message=F}
+```{r RLE_utility, eval=T, echo=F, message=F, warning=F}
 # The fitPLM_func function generates RLE and NUSE matrices
 fitPLM_func <- function(raw.data) {
   exprs(raw.data) <- log2(exprs(raw.data)) # The fitProbeLevelModel function needs ExpressionFeatureSet object as an input. Assign log transformed expression values to a new object
@@ -784,7 +784,7 @@ if (platform=="Affymetrix") {
 
 Use boxplot_func function to plot RLE. Outliers marked with * have values centered away from 0 and/or are more spread out are potentially problematic.
 
-```{r RLE_plot, eval=T, echo=F, warning=F, message=F, fig.height=8, fig.width=6}
+```{r RLE_plot, eval=T, echo=F, message=F, warning=F, fig.height=8, fig.width=6}
 if (platform=="Affymetrix") {res_RLE$plot}
 ```
 
@@ -977,7 +977,7 @@ pca_func <- function(pc) {
 
 1. Compute PCs and variance explained by the first 10 PCs
 
-```{r pca_tb, eval=T, echo=F, warning=F, message=F, results="asis"}
+```{r pca_tb, eval=T, echo=F, message=F, warning=F, results="asis"}
 res_pca <- pcastat_func()
 pandoc.table(res_pca$tb,split.tables=Inf, caption="Variance explained")
 ```
