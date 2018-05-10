@@ -426,7 +426,7 @@ pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " v
 ```
 
 
-#### Assign Official Gene Symbol
+### Assign Official Gene Symbol
 
 Annotate official gene symbol to probes. Install the [R annotation database package](https://bioconductor.org/packages/3.7/data/annotation/) corresponding to your gene expression data. For any newly installed annotation databases, it can be added to the list anno_list reserved for future use.
 
@@ -462,7 +462,7 @@ contrast_name=infosumm_func(pheno=pheno.of.interest)$name # adopt Unique_ID crea
 contrast_fn=paste0(resdir,"/", contrast_name, ".csv")
 ```
 
-```{r anno_tb, eval=T, echo=F, warning=F,message=F}
+```{r anno_tb, eval=T, echo=F, warning=F, message=F}
 contrast_table <- geneannot_func(tb=contrast_table)
 write.csv(contrast_table, file=contrast_fn, row.names = FALSE)
 ```
