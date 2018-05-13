@@ -389,7 +389,7 @@ batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table) 
     qValuesBatch=p.adjust(pValuesBatch, method="BH") # get q-values
     tb.sva <- data.frame(ID=names(pValuesBatch),pValuesBatch,qValuesBatch)
     contrast_table <- merge(contrast_table, tb.sva, by="ID", all=TRUE)
-  } else if (baterror=="correlate") {
+  } else if (batcherror=="correlate") {
     contrast_table$pValuesBatch=contrast_table$qValuesBatch=rep(NA,nrow(contrast_table))
   } else {
     contrast_table$pValuesBatch=contrast_table$P.Value
