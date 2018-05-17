@@ -83,7 +83,7 @@ library(dplyr)
 
 ## GEO Data Download and Phenotype Preparation
 
-#### GEO Dataset Download
+### GEO Dataset Download
 
 Download the GEO series matrix files if available. 
 
@@ -116,7 +116,7 @@ gse
 
 **Manual inspection:** Re-define the platform variable "platform" (i.e. "Affymetrix", "Agilent", "Illumina").
 
-#### Modify raw phenotype information
+### Modify raw phenotype information
 
 Obtain raw phenotype information from the GEO dataset and generated a summary of all the phenotypic variables for overview.
 
@@ -137,7 +137,7 @@ for (x in names(pheno.raw)) {
   if (is.numeric(vec)){res=summary(vec)}
   pandoc.table(res, justify='left',split.tables=Inf, caption=x)
 }
-if (nlevels(pheno.raw$supplementary_file)==1&levels(pheno.raw$supplementary_file)=="NONE") {suppldata=FALSE} else {suppldata=TRUE}
+if ("NONE"%in%levels(pheno.raw$supplementary_file)) {suppldata=FALSE} else {suppldata=TRUE}
 ```
 
 
@@ -163,7 +163,7 @@ pheno <- pheno.raw %>%
 
 **Manual inspection:** Re-define the variable "suppldata" (i.e. TRUE or FALSE) showing whether supplementary data is available.
 
-#### Raw intensity data download
+### Raw intensity data download
 
 Download supplementary raw data files if available. Analysis using raw intensity data is only for data from Affymetrix platform. For other platforms, the expression matrix is derive from ExpressionSet object (gse object from GEOquery), but the batch (scan date) information is obtained from the supplementary files and used for differential expression analysis.
 
@@ -268,7 +268,7 @@ Assign colors to scan date or disease/treatment if scan date is not available.
 ```{r usrdefine_utility, eval=T, echo=F}
 # assign colours to Scan Date for plots
 colours=c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D", "#666666", "#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5", "#D9D9D9", "#BC80BD", "#CCEBC5", "#FFED6F") # first 8 colour names derived from Dark2, and last 12 names from Set3
-vars=c("ScanDate_Group","Disease","Treatment")
+vars=c("ScanDate_Group","Treatment","Disease")
 leveluse=sapply(vars,function(x){if(x%in%names(pheno)){nlevel=nlevels(pheno[,x])}else{nlevel=0};nlevel>1})
 if (any(leveluse)){varuse=names(which(leveluse)[1])}else{stop("None of the following variables scan date/Disease/Treatment has >1 level. Check the dataset!")} # varible assigned color in plot
 
@@ -280,12 +280,23 @@ names(colour_list) <- levels(pheno[,varuse])
 
 If gene expression matrix data is used, check if they are normalized/log-transformed. After **manual inspection**, assign a logistic variable "normdata" (whether needs log2 transformation/normalization or not for QC). If normdata is FASE, we generate boxplots for log2-transformed and Quantile-normalization of log2-transformed data. Note that if the data are normalized, it is not likely to detect the outliers based on the intensity metrices.
 
+If negative/zero intensity values are present, convert them to NAs.
+
+```{r infinite_convert, eval=T, echo=F, fig.height=10, fig.width=12}
+# check if any negative/zero intensity value in the expression data
+if (any(apply(exprs(raw.data),2,function(x){min(x,na.rm=T)})<=0)) {
+  cat("Negative or zero intensity values are observed. Convert them to NA.\n")
+}
+exprs(raw.data)=apply(exprs(raw.data),2,function(x){replace(x,which(x<=0),NA)})
+```
+
+
 ```{r check_norm, eval=T, echo=F, warning=F}
 if (!suppldata) {
-  boxplot(exprs(raw.data),col=colour_list,main="Probe Intensity matrix of raw data",xaxt="n")
+  boxplot(exprs(gse),col=colour_list,main="Probe Intensity matrix of raw data",xaxt="n") # note gse here are non-coverted expression values
   legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
   if (!normdata) {
-    boxplot(log2(exprs(raw.data)+1),col=colour_list,main="Probe Intensity matrix of log2 data",xaxt="n")
+    boxplot(log2(exprs(raw.data)),col=colour_list,main="Probe Intensity matrix of log2 data",xaxt="n")
     legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
     boxplot(normalize.quantiles(log2(exprs(raw.data))),col=colour_list,main="Probe Intensity matrix of qnormed log2 data",xaxt="n")
     legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
@@ -570,8 +581,6 @@ The x-axis indicates the average log-intensity of both arrays, which is called A
 
 It is expected that the probe levels do not differ systematically within a group of replicates, so that the MA-plot is centered on the y-axis (y=0 or M=0) from low to high intensities.
 
-If any intensity value is zero in raw data (not normalized), add constant one to the intensity matrix, as Hoeffding's statistics cannot handle infinite value. 
-
 ```{r MA_utility, eval=T, echo=F}
 # The MAcal_func function computes M and A matrices, while use the intensity of 20000 randomly selected probes
 MAcal_func <- function(x) { # matrix (row: probe intensities, col: array (samples)
@@ -632,9 +641,7 @@ MAplot_func <- function(sMA, outlier_res) {
 MA_func <- function(){
   # Compute M-A metrics
   if (!normdata) {
-    # check if any zero intensity value in the expression data
-    if (any(apply(exprs(raw.data),2,min)<=0)) {sMA <- MAcal_func(log2(exprs(raw.data)+1))} # add constant 1 to raw data intensity
-    else {sMA <- MAcal_func(log2(exprs(raw.data)))}
+    sMA <- MAcal_func(log2(exprs(raw.data)))
   }
   else {sMA <- MAcal_func(exprs(raw.data))}
   outlier_res <- outlier_MA_func(exprs=sMA)
@@ -871,8 +878,6 @@ Distance between arrays is evaluated using mean absolute difference of log-inten
 
 The distance d(ab) between two arrays a and b is computed as the mean absolute difference (L1-distance) between the data of the arrays (using the data from all probes without filtering). In the formula (the dist2 function from genefilter package), d(ab) = mean | M(ai) - M(bi) |, where M(ai) is the value of the i-th probe on the a-th array. 
 
-If any intensity value is zero in raw data (not normalized), add constant one to the intensity matrix, as hierarchical clustering cannot handle infinite/NA value. 
-
 ```{r dist_utility, eval=T, echo=F, warning=F}
 # The dist2 estimates distance between samples
 dist2 <- function (x,fun = function(a, b) mean(abs(a - b), na.rm = TRUE),diagonal = 0) {
@@ -924,11 +929,7 @@ distplot_func <- function(m,outlier) {
 
 # The dist_func function outputs distance metrics
 dist_func <- function() {
-  if (!normdata) {
-    # check if any zero intensity value in the expression data
-    if (any(apply(exprs(raw.data),2,min)<=0)) {m <- dist2(log2(exprs(raw.data)+1))} # add constant 1 to raw data intensity
-    else {m <- dist2(log2(exprs(raw.data)))}
-  }
+  if (!normdata) {m <- dist2(log2(exprs(raw.data)))}
   else {m <- dist2(exprs(raw.data))}
   
   outlier_res=outlier_dist_func(m)
@@ -961,10 +962,8 @@ PCA demonstrates information of the expression dataset in a reduced number of di
 # The pcastat_func function computes principal components
 pcastat_func <- function() {
   # obtain original expression data
-  if (!normdata) {
-    if (!normdata) {raw.data.pca <- na.omit(apply(log2(exprs(raw.data)),2,function(x)replace(x,is.infinite(x),NA)))}
-  }
-  else {raw.data.pca <- na.omit(apply(exprs(raw.data),2,function(x)replace(x,is.infinite(x),NA)))} # replace infinite values to NAs and omit NAs
+  if (!normdata) {raw.data.pca <- na.omit(log2(exprs(raw.data)))}
+  else {raw.data.pca <- na.omit(exprs(raw.data))} # remove NAs
  
   # As scale function divides by the variance, the probe with the expression sd=0 across samples must be removed.
   sd <- apply(raw.data.pca,1,sd)
@@ -1008,7 +1007,7 @@ pca_func <- function(pc) {
     group_var=group_vars[i]
     legend=legends[i]
     nlevel=nlevels(pData(raw.data)[,group_var]) # levels of the variable
-    if (group_var=="ScanDate_Group"|(nlevel>=2&nlevel<=10)) {
+    if (group_var=="ScanDate_Group"|(nlevel>=2&nlevel<=20)) {
       plot_list[[group_var]]=pcaplot_func(pc, group_var=group_var,legend=legend)
     }
   }
