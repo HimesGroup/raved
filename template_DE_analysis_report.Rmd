@@ -80,9 +80,6 @@ biocLite("oligo")
 biocLite("limma")
 biocLite("sva")
 biocLite("annotate")
-biocLite("hgu133plus2.db")
-biocLite("hugene10sttranscriptcluster.db")
-biocLite("hgug4112a.db")
 biocLite("viridis")
 install.packages("ggplot2")
 install.packages("gplots")
@@ -304,6 +301,17 @@ raw.data.of.interest
 
 Normalize gene expression raw data using robust multi-array average (RMA) method (if supplementary data is available) or quantile normalize (if use expression matrix), unless the raw.data object is already normalized (based on the variable normdata).
 
+
+If negative/zero intensity values are present, convert them to NAs.
+
+```{r infinite_convert, eval=T, echo=F, fig.height=10, fig.width=12}
+# check if any negative/zero intensity value in the expression data
+if (any(apply(exprs(raw.data.of.interest),2,function(x){min(x,na.rm=T)})<=0)) {
+  cat("Negative or zero intensity values are observed. Convert them to NA.\n")
+}
+exprs(raw.data.of.interest)=apply(exprs(raw.data.of.interest),2,function(x){replace(x,which(x<=0),NA)})
+```
+
 ```{r rma, eval=T, echo=F, message=F, results="hide"}
 if (usesuppl) {
   rma.data.of.interest = rma(raw.data.of.interest)
@@ -347,7 +355,7 @@ limma_func <- function() { # here only con0, con1 are used in comparisons. use a
 
 Fit a linear model to RMA log-intensity values, fit this model to a contrast matrix for the comparison of interest, and apply empirical Bayes smoothing to obtain more precise standard errors.
 
-```{r limma, eval=T, echo=F, results="asis"}
+```{r limma, eval=T, echo=F, message=F, warning=F, results="asis"}
 res_DE=limma_func()
 fit2=res_DE$fit2
 pandoc.table(data.frame(Sample=rma.data.of.interest$Sample,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
@@ -441,25 +449,32 @@ pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " v
 Annotate official gene symbol to probes. Install the [R annotation database package](https://bioconductor.org/packages/3.7/data/annotation/) corresponding to your gene expression data. For any newly installed annotation databases, it can be added to the list anno_list reserved for future use.
 
 ```{r anno_list, eval=T, echo=F}
-anno_list=list()
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
+anno_list[["GPL8300"]]="hgu95av2.db"
+# Agilent
 anno_list[["GPL6480"]]="hgug4112a.db"
+# Illumina
+anno_list[["GPL6947"]]="illuminaHumanv3.db"
+anno_list[["GPL10558"]]="illuminaHumanv4.db"
 ```
 
-```{r anno_utility, eval=T, echo=F}
+```{r anno_utility, eval=T, echo=F, warning=F, message=F}
+# install corresponding annotation database if it is not installed
+anno_array=annotation(rma.data.of.interest)
+cat("The platform used is", anno_array, "\n")
+if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
+anno_lib=anno_list[[anno_array]] # use the annotation database
+cat("The corresponding R annotation database package is", anno_lib,"\n")
+# check if the annotation database is installed
+if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
+library(anno_lib, character.only=T)
+
 geneannot_func <- function(tb) {
-  # check if the annotation database is installed
-  anno_array=annotation(rma.data.of.interest)
-  cat("The platform used is ", anno_array, "\n")
-  if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
-  anno_lib=anno_list[[anno_array]] # use the annotation database
-  library(anno_lib, character.only=T)
   anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
-  
   remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
   if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)} 
   tb$ID=as.character(tb$ID)
@@ -494,8 +509,9 @@ volplot_func <- function(df,qval_column,title) {
   # get qvalue column
   qval <- df[,qval_column]
   if (all(is.na(qval))) {message("The batch and status are not confounded. Batch effect is not adjusted.")} else {          
-      df <- df[!is.na(qval),] # remove NA values 
-    if (min(qval)>=0.05) {
+    df <- df[!is.na(qval),] # remove NA values
+    qval <- df[,qval_column]
+    if (min(df[,qval_column])>=0.05) {
       df$sig <- "black" # assign colors to DE and non-DE genes
     } else {
       # assign colors to DE and non-DE genes
@@ -608,7 +624,7 @@ topgene_boxplot_func(tb=res[1:6,])
 heatmap_topgene_func <- function(tb, topnum=200, colour_status_list, colour_status, main="") { # colour_status_list: color assigned to each sample; colour_status: colour vector for the legend plot
   top.rma <- rma.data.of.interest[row.names(rma.data.of.interest)%in%tb[1:topnum,"ID"]] # plot heatmap for top 200 genes
   array_name <- shortname_func(colnames(exprs(top.rma))) # shorten the sample id
-  heatmap.2(exprs(top.rma), col=viridis(256, option="B"),
+  heatmap.2(na.omit(exprs(top.rma)), col=viridis(256, option="B"),
     ColSideColors=colour_status_list, # use predefined colour_status_list, assign colors to status
     labCol=array_name,labRow = "", # take out gene probe id
     trace="none",
@@ -636,7 +652,7 @@ if ("ScanDate_Group"%in%names(pheno)) {
 ```{r corplot_utility, eval=T, echo=F, fig.height=10, fig.width=12}
 # The corplot_func function plots correlation between samples
 corplot_func <- function(m, colour_status_list, colour_status, main="") {  # m: correlation matrix, colour_status_list: color assigned to each sample; colour_status: colour vector for the legend plot
-  m <- cor(m) # compute correlation matrix
+  m <- cor(na.omit(m)) # compute correlation matrix
   # compute distance based on 1-correlation efficient
   dend = as.dendrogram(hclust(as.dist(1-m), method = "single"))
   ord = order.dendrogram(dend)
@@ -653,32 +669,14 @@ corplot_func <- function(m, colour_status_list, colour_status, main="") {  # m: 
 }
 ```
 
-If any intensity value is zero in expression matrix, add constant one to the intensity matrix, as hierarchical clustering cannot handle infinite/NA value.
-
-```{r data_nozero, eval=T, echo=F, fig.height=10, fig.width=12}
-# check if any zero intensity value in the expression data
-if (any(apply(exprs(raw.data.of.interest),2,min)<=0)) {
-  if (!(usesuppl)) {
-    if (!normdata) {rma.exprs.nozero=normalize.quantiles(log2(exprs(raw.data.of.interest)+1))}
-    else {rma.exprs.nozero=exprs(rma.data.of.interest)}
-  } else {
-    raw.data.of.interest2=raw.data.of.interest
-    exprs(raw.data.of.interest2)=exprs(raw.data.of.interest2)+1
-    rma.exprs.nozero=exprs(rma(raw.data.of.interest2))
-  }
-} else {
-    rma.exprs.nozero=exprs(rma.data.of.interest)
-}
-```
 
 ```{r corplot1, eval=T, echo=F, fig.height=10, fig.width=12}
-corplot_func(m=rma.exprs.nozero,colour_status_list=colour_status_list, colour_status=colour_status, main="Correlation heatmap by comparison status")
-
+corplot_func(m=exprs(rma.data.of.interest),colour_status_list=colour_status_list, colour_status=colour_status, main="Correlation heatmap by comparison status")
 ```
 
 ```{r corplot2, eval=T, echo=F, fig.height=10, fig.width=12}
 if ("ScanDate_Group"%in%names(pheno)) {
-  corplot_func(m=rma.exprs.nozero,colour_status_list=colour_scandate_list, colour_status=colour_scandate, main="Correlation heatmap by scan date")
+  corplot_func(m=exprs(rma.data.of.interest),colour_status_list=colour_scandate_list, colour_status=colour_scandate, main="Correlation heatmap by scan date")
 }
 ```
 
