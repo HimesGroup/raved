@@ -47,10 +47,12 @@ treatment=c(con0,con1)
 disease="healthy"
 ```
 
-**Note that** three variables, platform (platform), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
+
+**Note that** four variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
 
 ```{r var2, eval=T, echo=F}
 platform="Affymetrix"
+geo_GPL=""
 usesuppl=TRUE
 normdata=FALSE
 # The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
@@ -166,7 +168,7 @@ infosumm_func <- function(pheno) {
 Read in pre-prepared phenotype data
 
 ```{r pheno_readin, eval=T, echo=F}
-pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")
+if (geo_GPL=="") {pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} else {pheno_fn=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withQC.txt")}
 # read in the pre-prepared phenotype data
 if (!file.exists(pheno_fn)) {stop("The phenotype file does not exist. Please check!")} else {pheno <- read.table(pheno_fn, header=TRUE, sep="\t")}
 ```
@@ -449,6 +451,9 @@ pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " v
 Annotate official gene symbol to probes. Install the [R annotation database package](https://bioconductor.org/packages/3.7/data/annotation/) corresponding to your gene expression data. For any newly installed annotation databases, it can be added to the list anno_list reserved for future use.
 
 ```{r anno_list, eval=T, echo=F}
+anno_list=list()
+# Affymetrix
+anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
@@ -508,7 +513,7 @@ volplot_func <- function(df,qval_column,title) {
   if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
-  if (all(is.na(qval))) {message("The batch and status are not confounded. Batch effect is not adjusted.")} else {          
+  if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else {          
     df <- df[!is.na(qval),] # remove NA values
     qval <- df[,qval_column]
     if (min(df[,qval_column])>=0.05) {
@@ -549,7 +554,7 @@ histplot_func <- function(df,qval_column,title) {
   if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
-  hist(qval,main=title,xlab=qval_column)
+  if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else{hist(qval,main=title,xlab=qval_column)}
 }
 ```
 
