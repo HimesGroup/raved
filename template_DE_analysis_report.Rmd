@@ -140,12 +140,12 @@ infosumm_func <- function(pheno) {
   N_Condition1 <- sum(pheno$Status==con1) # count number of samples under condition 1
   if (identical(sort(levels(pheno$Treatment)),sort(c(con0,con1)))) {
     App="GC"
-    name=paste(geo_id,tissue,disease,con1,"vs",con0, sep="_")
+    if (geo_GPL=="") {name=paste(geo_id,tissue,disease,con1,"vs",con0, sep="_")} else {{name=paste(geo_id,geo_GPL,tissue,disease,con1,"vs",con0, sep="_")}}
     Disease=disease
     Treatment=con1
   } else {
     App="Asthma"
-    name=paste(geo_id,tissue,treatment,con1,"vs",con0, sep="_")
+    if (geo_GPL=="") {name=paste(geo_id,tissue,treatment,con1,"vs",con0, sep="_")} else {name=paste(geo_id,geo_GPL,tissue,treatment,con1,"vs",con0, sep="_")}
     Disease=con1
     Treatment=treatment
   }
