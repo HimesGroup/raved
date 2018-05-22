@@ -601,6 +601,7 @@ topgene_boxplot_func <- function(tb,colour,comp) { # comp: comparison status
     if (missing(colour)) {colour=colours[1]}
     probe_top <- tb$ID[i]
     gene_top <- tb$SYMBOL[i]
+    row.names(rma.data.of.interest) <- gsub("_PM","",row.names(rma.data.of.interest))
     values=exprs(rma.data.of.interest)[row.names(rma.data.of.interest)%in%probe_top, ]
     status=rma.data.of.interest$Status
     df <- data.frame(values=values,status=status)
