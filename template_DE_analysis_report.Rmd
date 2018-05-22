@@ -47,10 +47,12 @@ treatment=c(con0,con1)
 disease="healthy"
 ```
 
-**Note that** three variables, platform (platform), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
+
+**Note that** four variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
 
 ```{r var2, eval=T, echo=F}
 platform="Affymetrix"
+geo_GPL=""
 usesuppl=TRUE
 normdata=FALSE
 # The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
@@ -75,13 +77,11 @@ Install the prerequisite R packages if they do not exist
 ```{r pkg, eval=F, echo=F}
 source("http://bioconductor.org/biocLite.R")
 biocLite("GEOquery")
+biocLite("preprocessCore")
 biocLite("oligo")
 biocLite("limma")
 biocLite("sva")
 biocLite("annotate")
-biocLite("hgu133plus2.db")
-biocLite("hugene10sttranscriptcluster.db")
-biocLite("hgug4112a.db")
 biocLite("viridis")
 install.packages("ggplot2")
 install.packages("gplots")
@@ -97,12 +97,11 @@ library(oligo)
 library(limma)
 library(sva)
 library(annotate)
-library(hgu133plus2.db)
-library(hugene10sttranscriptcluster.db)
 library(viridis)
 library(ggplot2)
 library(gplots)
 library(devtools)
+library(preprocessCore)
 library(pander)
 ```
 
@@ -141,12 +140,12 @@ infosumm_func <- function(pheno) {
   N_Condition1 <- sum(pheno$Status==con1) # count number of samples under condition 1
   if (identical(sort(levels(pheno$Treatment)),sort(c(con0,con1)))) {
     App="GC"
-    name=paste(geo_id,tissue,disease,con1,"vs",con0, sep="_")
+    if (geo_GPL=="") {name=paste(geo_id,tissue,disease,con1,"vs",con0, sep="_")} else {{name=paste(geo_id,geo_GPL,tissue,disease,con1,"vs",con0, sep="_")}}
     Disease=disease
     Treatment=con1
   } else {
     App="Asthma"
-    name=paste(geo_id,tissue,treatment,con1,"vs",con0, sep="_")
+    if (geo_GPL=="") {name=paste(geo_id,tissue,treatment,con1,"vs",con0, sep="_")} else {name=paste(geo_id,geo_GPL,tissue,treatment,con1,"vs",con0, sep="_")}
     Disease=con1
     Treatment=treatment
   }
@@ -169,7 +168,7 @@ infosumm_func <- function(pheno) {
 Read in pre-prepared phenotype data
 
 ```{r pheno_readin, eval=T, echo=F}
-pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")
+if (geo_GPL=="") {pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} else {pheno_fn=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withQC.txt")}
 # read in the pre-prepared phenotype data
 if (!file.exists(pheno_fn)) {stop("The phenotype file does not exist. Please check!")} else {pheno <- read.table(pheno_fn, header=TRUE, sep="\t")}
 ```
@@ -204,10 +203,12 @@ names(colour_status) <- c(con0,con1) # assign red to condition 1 and navy to con
 colour_status_list <- unlist(lapply(pheno.of.interest$Status,function(x){colour_status[x]}))
 # assign colours to scan date
 colours=c("#1B9E77", "#D95F02", "#7570B3", "#E7298A", "#66A61E", "#E6AB02", "#A6761D", "#666666", "#8DD3C7", "#FFFFB3", "#BEBADA", "#FB8072", "#80B1D3", "#FDB462", "#B3DE69", "#FCCDE5", "#D9D9D9", "#BC80BD", "#CCEBC5", "#FFED6F") # first 8 colour names derived from Dark2, and last 12 names from Set3
-i=nlevels(pheno.of.interest$ScanDate_Group)
-colour_scandate <- colours[1:i]
-names(colour_scandate) <- levels(pheno.of.interest$ScanDate_Group) # colour to corresponding scan date
-colour_scandate_list <- unlist(lapply(pheno.of.interest$ScanDate_Group,function(x){colour_scandate[x]}))
+if ("ScanDate_Group"%in%names(pheno)) {
+  i=nlevels(pheno.of.interest$ScanDate_Group)
+  colour_scandate <- colours[1:i]
+  names(colour_scandate) <- levels(pheno.of.interest$ScanDate_Group) # colour to corresponding scan date
+  colour_scandate_list <- unlist(lapply(pheno.of.interest$ScanDate_Group,function(x){colour_scandate[x]}))
+}
 ```
 
 ### Gene expression data preparation
@@ -300,10 +301,29 @@ raw.data.of.interest
 
 ### Normalize raw gene expression data
 
-Normalize gene expression raw data using robust multi-array average (RMA) method, unless the raw.data object is already normalized (based on the variable normdata).
+Normalize gene expression raw data using robust multi-array average (RMA) method (if supplementary data is available) or quantile normalize (if use expression matrix), unless the raw.data object is already normalized (based on the variable normdata).
+
+
+If negative/zero intensity values are present, convert them to NAs.
+
+```{r infinite_convert, eval=T, echo=F, fig.height=10, fig.width=12}
+# check if any negative/zero intensity value in the expression data
+if (any(apply(exprs(raw.data.of.interest),2,function(x){min(x,na.rm=T)})<=0)) {
+  cat("Negative or zero intensity values are observed. Convert them to NA.\n")
+}
+exprs(raw.data.of.interest)=apply(exprs(raw.data.of.interest),2,function(x){replace(x,which(x<=0),NA)})
+```
 
 ```{r rma, eval=T, echo=F, message=F, results="hide"}
-if (!normdata) {rma.data.of.interest = rma(raw.data.of.interest)} else {rma.data.of.interest=raw.data.of.interest}
+if (usesuppl) {
+  rma.data.of.interest = rma(raw.data.of.interest)
+  cat("RMA normalization is used.\n")
+} else {
+  rma.data.of.interest=raw.data.of.interest
+  if (!normdata) {exprs(rma.data.of.interest)=normalize.quantiles(log2(exprs(rma.data.of.interest)))
+  cat("Quantile normalization and log2 transformation is used.\n")
+  }
+}
 ```
 
 ```{r rma_plot, eval=T, echo=F}
@@ -312,7 +332,7 @@ boxplot(raw.data.of.interest,target="core",col=cols,main="Raw Probe Intensities"
 legend("topright",legend=names(colour_status),fill=colour_status)
 
 if (!normdata) {
-  boxplot(rma.data.of.interest,col=cols,main="RMA Probe Intensities",xaxt="n") # view RMA-adjusted data
+  boxplot(rma.data.of.interest,col=cols,main="Normalized Probe Intensities",xaxt="n") # view RMA-adjusted data
   legend("topright",legend=names(colour_status),fill=colour_status)
 } else {cat("The raw data is already normalized")}
 ```
@@ -337,7 +357,7 @@ limma_func <- function() { # here only con0, con1 are used in comparisons. use a
 
 Fit a linear model to RMA log-intensity values, fit this model to a contrast matrix for the comparison of interest, and apply empirical Bayes smoothing to obtain more precise standard errors.
 
-```{r limma, eval=T, echo=F, results="asis"}
+```{r limma, eval=T, echo=F, message=F, warning=F, results="asis"}
 res_DE=limma_func()
 fit2=res_DE$fit2
 pandoc.table(data.frame(Sample=rma.data.of.interest$Sample,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
@@ -432,23 +452,34 @@ Annotate official gene symbol to probes. Install the [R annotation database pack
 
 ```{r anno_list, eval=T, echo=F}
 anno_list=list()
+# Affymetrix
+anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
+anno_list[["GPL96"]]="hgu133plus2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
+anno_list[["GPL8300"]]="hgu95av2.db"
+# Agilent
 anno_list[["GPL6480"]]="hgug4112a.db"
+# Illumina
+anno_list[["GPL6947"]]="illuminaHumanv3.db"
+anno_list[["GPL10558"]]="illuminaHumanv4.db"
 ```
 
-```{r anno_utility, eval=T, echo=F}
+```{r anno_utility, eval=T, echo=F, warning=F, message=F}
+# install corresponding annotation database if it is not installed
+anno_array=annotation(rma.data.of.interest)
+cat("The platform used is", anno_array, "\n")
+if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
+anno_lib=anno_list[[anno_array]] # use the annotation database
+cat("The corresponding R annotation database package is", anno_lib,"\n")
+# check if the annotation database is installed
+if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
+library(anno_lib, character.only=T)
+
 geneannot_func <- function(tb) {
-  # check if the annotation database is installed
-  anno_array=annotation(rma.data.of.interest)
-  cat("The platform used is ", anno_array, "\n")
-  if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
-  anno_lib=anno_list[[anno_array]] # use the annotation database
-  library(anno_lib, character.only=T)
   anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
-  
   remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
   if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)} 
   tb$ID=as.character(tb$ID)
@@ -482,9 +513,10 @@ volplot_func <- function(df,qval_column,title) {
   if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
-  if (all(is.na(qval))) {message("The batch and status are not confounded. Batch effect is not adjusted.")} else {          
-      df <- df[!is.na(qval),] # remove NA values 
-    if (min(qval)>=0.05) {
+  if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else {          
+    df <- df[!is.na(qval),] # remove NA values
+    qval <- df[,qval_column]
+    if (min(df[,qval_column])>=0.05) {
       df$sig <- "black" # assign colors to DE and non-DE genes
     } else {
       # assign colors to DE and non-DE genes
@@ -522,7 +554,7 @@ histplot_func <- function(df,qval_column,title) {
   if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
-  hist(qval,main=title,xlab=qval_column)
+  if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else{hist(qval,main=title,xlab=qval_column)}
 }
 ```
 
@@ -597,7 +629,7 @@ topgene_boxplot_func(tb=res[1:6,])
 heatmap_topgene_func <- function(tb, topnum=200, colour_status_list, colour_status, main="") { # colour_status_list: color assigned to each sample; colour_status: colour vector for the legend plot
   top.rma <- rma.data.of.interest[row.names(rma.data.of.interest)%in%tb[1:topnum,"ID"]] # plot heatmap for top 200 genes
   array_name <- shortname_func(colnames(exprs(top.rma))) # shorten the sample id
-  heatmap.2(exprs(top.rma), col=viridis(256, option="B"),
+  heatmap.2(na.omit(exprs(top.rma)), col=viridis(256, option="B"),
     ColSideColors=colour_status_list, # use predefined colour_status_list, assign colors to status
     labCol=array_name,labRow = "", # take out gene probe id
     trace="none",
@@ -615,7 +647,9 @@ heatmap_topgene_func(tb=res, topnum=200, colour_status_list=colour_status_list, 
 ```
 
 ```{r heatmap2, eval=T, echo=F, fig.height=10, fig.width=12}
-heatmap_topgene_func(tb=res, topnum=200, colour_status_list=colour_scandate_list, colour_status=colour_scandate, main="Gene expression heatmap by scan date")
+if ("ScanDate_Group"%in%names(pheno)) {
+  heatmap_topgene_func(tb=res, topnum=200, colour_status_list=colour_scandate_list, colour_status=colour_scandate, main="Gene expression heatmap by scan date")
+}
 ```
 
 ### Heatmap for Sample Correlation
@@ -623,7 +657,7 @@ heatmap_topgene_func(tb=res, topnum=200, colour_status_list=colour_scandate_list
 ```{r corplot_utility, eval=T, echo=F, fig.height=10, fig.width=12}
 # The corplot_func function plots correlation between samples
 corplot_func <- function(m, colour_status_list, colour_status, main="") {  # m: correlation matrix, colour_status_list: color assigned to each sample; colour_status: colour vector for the legend plot
-  m <- cor(m) # compute correlation matrix
+  m <- cor(na.omit(m)) # compute correlation matrix
   # compute distance based on 1-correlation efficient
   dend = as.dendrogram(hclust(as.dist(1-m), method = "single"))
   ord = order.dendrogram(dend)
@@ -640,12 +674,15 @@ corplot_func <- function(m, colour_status_list, colour_status, main="") {  # m: 
 }
 ```
 
+
 ```{r corplot1, eval=T, echo=F, fig.height=10, fig.width=12}
 corplot_func(m=exprs(rma.data.of.interest),colour_status_list=colour_status_list, colour_status=colour_status, main="Correlation heatmap by comparison status")
 ```
 
 ```{r corplot2, eval=T, echo=F, fig.height=10, fig.width=12}
-corplot_func(m=exprs(rma.data.of.interest),colour_status_list=colour_scandate_list, colour_status=colour_scandate, main="Correlation heatmap by scan date")
+if ("ScanDate_Group"%in%names(pheno)) {
+  corplot_func(m=exprs(rma.data.of.interest),colour_status_list=colour_scandate_list, colour_status=colour_scandate, main="Correlation heatmap by scan date")
+}
 ```
 
 ### Principal Component Analysis (PCA)
@@ -654,7 +691,7 @@ corplot_func(m=exprs(rma.data.of.interest),colour_status_list=colour_scandate_li
 # The pcastat_func function computes principal components
 pcastat_func <- function(m) {
   # obtain original expression data
-  raw.data.pca <- na.omit(m)
+  raw.data.pca <- na.omit(apply(m,2,function(x)replace(x,is.infinite(x),NA))) # replace infinite values to NAs and omit NAs
   # As scale function divides by the variance, the probe with the expression sd=0 across samples must be removed.
   sd <- apply(raw.data.pca,1,sd)
   raw.data.pca <- raw.data.pca[!sd==0,]
