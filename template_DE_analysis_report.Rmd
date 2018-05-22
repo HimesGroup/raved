@@ -455,6 +455,7 @@ anno_list=list()
 # Affymetrix
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
+anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
