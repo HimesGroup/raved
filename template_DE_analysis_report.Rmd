@@ -455,6 +455,7 @@ anno_list=list()
 # Affymetrix
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
+anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
@@ -569,7 +570,7 @@ for (qval in c("adj.P.Val","qValuesBatch")) {histplot_func(res, qval)}
 
 ```{r top20_utility, eval=T, echo=F}
 # The datreform_func function reformats the DE table
-datreform_func <- function(dt,topnum=20) {
+datreform_func <- function(dt,topnum=200) {
   dt=dt[order(dt$P.Value),]
   dt=dt[1:topnum,]
   round2 <- function(x){round(x,2)}
@@ -585,7 +586,7 @@ Show top 20 probes sorted by un-adjusted p-values
 ```{r top20, eval=T, echo=F, results="asis"}
 res <- datreform_func(dt=res)
 rownames(res) <- NULL
-pandoc.table(res,split.tables=Inf)
+pandoc.table(res[1:20,],split.tables=Inf)
 ```
 
 ### Boxplots for Top 6 Differentially Expressed Genes
@@ -600,6 +601,7 @@ topgene_boxplot_func <- function(tb,colour,comp) { # comp: comparison status
     if (missing(colour)) {colour=colours[1]}
     probe_top <- tb$ID[i]
     gene_top <- tb$SYMBOL[i]
+    row.names(rma.data.of.interest) <- gsub("_PM","",row.names(rma.data.of.interest))
     values=exprs(rma.data.of.interest)[row.names(rma.data.of.interest)%in%probe_top, ]
     status=rma.data.of.interest$Status
     df <- data.frame(values=values,status=status)
@@ -627,7 +629,7 @@ topgene_boxplot_func(tb=res[1:6,])
 ```{r heatmap_utility, eval=T, echo=F}
 # The heatmap_topgene_func function for top gene heatmap plots
 heatmap_topgene_func <- function(tb, topnum=200, colour_status_list, colour_status, main="") { # colour_status_list: color assigned to each sample; colour_status: colour vector for the legend plot
-  top.rma <- rma.data.of.interest[row.names(rma.data.of.interest)%in%tb[1:topnum,"ID"]] # plot heatmap for top 200 genes
+  top.rma <- rma.data.of.interest[row.names(rma.data.of.interest)%in%tb[1:topnum,"ID"],] # plot heatmap for top 200 genes
   array_name <- shortname_func(colnames(exprs(top.rma))) # shorten the sample id
   heatmap.2(na.omit(exprs(top.rma)), col=viridis(256, option="B"),
     ColSideColors=colour_status_list, # use predefined colour_status_list, assign colors to status
