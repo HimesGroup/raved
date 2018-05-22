@@ -570,7 +570,7 @@ for (qval in c("adj.P.Val","qValuesBatch")) {histplot_func(res, qval)}
 
 ```{r top20_utility, eval=T, echo=F}
 # The datreform_func function reformats the DE table
-datreform_func <- function(dt,topnum=20) {
+datreform_func <- function(dt,topnum=200) {
   dt=dt[order(dt$P.Value),]
   dt=dt[1:topnum,]
   round2 <- function(x){round(x,2)}
@@ -586,7 +586,7 @@ Show top 20 probes sorted by un-adjusted p-values
 ```{r top20, eval=T, echo=F, results="asis"}
 res <- datreform_func(dt=res)
 rownames(res) <- NULL
-pandoc.table(res,split.tables=Inf)
+pandoc.table(res[1:20,],split.tables=Inf)
 ```
 
 ### Boxplots for Top 6 Differentially Expressed Genes
