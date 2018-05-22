@@ -28,11 +28,12 @@ datadir="data"
 resdir="results"
 ```
 
-**Note that** two variables, platform (platform), and normdata (whether the expression matrix is normalized), need to be **manually** re-defined in the following steps after look into the datasets. A shortname_func function is suggested to be updated.
+**Note that** three variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms) and normdata (whether the expression matrix is normalized), need to be **manually** re-defined in the following steps after look into the datasets. A shortname_func function is suggested to be updated.
 
 
 ```{r var2, eval=T, echo=F}
 platform="Affymetrix"
+geo_GPL=""
 normdata=FALSE
 # The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
 shortname_func <- function(x){gsub("^(.*)\\.(cel|CEL).gz","\\1",x)}
@@ -89,23 +90,26 @@ Download the GEO series matrix files if available.
 
 ```{r geo_download, eval=T, echo=F, message=F, warning=F}
 # check if GEO matrix file exists
-geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
- if (length(geo_fn)==0) { # matrix files are alreadly downloaded
-   gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
-   
-   if (length(gselms)>1) {  # multiple platform
-     message("This study was performed in multiple platforms")
-     idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
-     gse <- gselms[[idx]]
-     
-   } else {gse <- gselms[[1]]}
- } else if (length(geo_fn)==1) {
-   gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
- } else { # multiple platform
-   message("This study was performed in multiple platforms")
-   geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
-   gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
- }
+geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
+if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+  gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
+  if (length(gselms)>1) {  # multiple platform
+    gpls=sapply(gselms,annotation)
+    cat("This study was performed in multiple platforms:\n")
+    cat(unname(gpls),"\n")
+    cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")}
+    else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+  } else {idx=1}
+  gse <- gselms[[idx]]
+} else if (length(geo_fn)==1) {
+  gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+} else { # multiple platform
+  cat("This study was performed in multiple platforms:\n")
+  cat(geo_fn)
+  cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+  if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); geo_fn <- geo_fn[grep(geo_GPL,geo_fn)];gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)}
+}
 ```
 
 
@@ -307,7 +311,9 @@ if (!suppldata) {
 **Manual inspection:** Re-define the variable "normdata" (i.e. TRUE or FALSE) showing whether the expression data is normalized or not.
 
 ```{r pheno_withoutQC, eval=T, warning=F, echo=F}
-write.table(pheno,paste0(resdir,"/",geo_id,"_Phenotype_withoutQC.txt"),col.names=T,row.names=F,sep="\t",quote=F)
+if (geo_GPL=="") {pheno_fn_withoutQC=paste0(resdir,"/",geo_id,"_Phenotype_withoutQC.txt"); pheno_fn_withQC=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} else
+{pheno_fn_withoutQC=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withoutQC.txt");pheno_fn_withQC=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withQC.txt")}
+write.table(pheno,pheno_fn_withoutQC,col.names=T,row.names=F,sep="\t",quote=F)
 ```
 
 
@@ -329,8 +335,7 @@ All the above steps can be processed in data from Affymetrix gene expression arr
 
 Use the prepared phenotype file.
 ```{r pheno_readin, eval=T, echo=F}
-pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withoutQC.txt")
-pheno <- read.table(pheno_fn, header=T, sep="\t")
+pheno <- read.table(pheno_fn_withoutQC, header=T, sep="\t")
 ```
 
 ### Raw Probe Intensity Boxplots and Density Histograms
@@ -1069,8 +1074,8 @@ tbQC_func <- function(outliers) { # define outliers
     tb$QC_Pass[rownames(tb)%in%outliers]<-0
   }
   tb$Filename <- rownames(tb) # add filename in a new column
-  pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt") # save in a new phenotype file
-  write.table(tb,pheno_fn,col.names=T,row.names=F,sep="\t",quote=F)
+  # save in a new phenotype file
+  write.table(tb,pheno_fn_withQC,col.names=T,row.names=F,sep="\t",quote=F)
   # defined outliers
   outlier=as.character(tb$GEO_ID)[which(tb$QC_Pass==0)]
   # summary of phenotype information before QC
