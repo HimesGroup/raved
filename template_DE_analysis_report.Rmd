@@ -47,7 +47,7 @@ treatment=c(con0,con1)
 disease="healthy"
 ```
 
-
+Manually change these variables according to dataset:
 **Note that** four variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
 
 ```{r var2, eval=T, echo=F}
