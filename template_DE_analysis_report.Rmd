@@ -25,7 +25,6 @@ Outputs:
 
 * Gene differential expression result file(s) (.csv)
 * A gene expression analysis report (.html)
-demo
 
 Mannually change the variables for GEO ID (geo_id), data directory (datadir), result directory (resdir), tissue, disease/treatment status, and comparison conditions
 
