@@ -246,7 +246,8 @@ pData(raw.data) <- pheno
 row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
 # Check if the sample names derived from expression data match those in phenotype file
 rowname <- gsub("^(.*).(cel|CEL|txt|Txt).gz","\\1",row.names(pData(raw.data)))
-if (!identical(rowname,as.character(pData(raw.data)$GEO_ID))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
+matching <- mapply(grepl, x=rowname, pattern=as.character(pData(raw.data)$GEO_ID))
+if (FALSE %in% matching) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
 ```
 
 Show the summary of phenotype variables and the sample size for different groups
