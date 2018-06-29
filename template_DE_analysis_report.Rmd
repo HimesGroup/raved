@@ -529,6 +529,8 @@ volplot_func <- function(df,qval_column,title) {
     color <- levels(df$sig)
     # log10 transformed q values
     df$logqval <- -log10(qval)
+    diffgenes <- df$ID[qval<0.05] #Create list of all DEG's
+    cat(length(diffgenes), "differentially expressed genes have been identified.")
     print(
     ggplot(df, aes(x = logFC, y = logqval, color=sig)) + geom_point() +
       theme_bw() +
