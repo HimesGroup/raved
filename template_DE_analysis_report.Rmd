@@ -241,7 +241,8 @@ if (usesuppl) {
     if (!identical(samp_exist,samp_need)) {suppldownload_func()}
   }
   samp_exist=basename(rawall_func()) # updated the existing samples
-  if (!identical(samp_exist,samp_need)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+  matching <- mapply(grepl, x=samp_exist, pattern=samp_need)
+  if (FALSE %in% matching) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
   
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
