@@ -28,7 +28,7 @@ Outputs:
 
 Mannually change the variables for GEO ID (geo_id), data directory (datadir), result directory (resdir), tissue, disease/treatment status, and comparison conditions
 
-```{r, var, eval=T, echo=F}
+```{r, var, eval=T, echo=T}
 # GEO id
 geo_id="GSE4917"
 # direcotry stores GEO data
@@ -50,13 +50,23 @@ disease="healthy"
 Manually change these variables according to dataset:
 **Note that** four variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
 
-```{r var2, eval=T, echo=F}
+```{r var2, eval=T, echo=T}
 platform="Affymetrix"
 geo_GPL=""
 usesuppl=TRUE
 normdata=FALSE
 # The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
 shortname_func <- function(x){gsub("^(.*).(cel|CEL).gz","\\1",x)} # remove .cel.gz or .CEL.gz from sample
+```
+
+Automatically generate phenotype file variable pheno_fn if it is generated from QC step, otherwise manually assign this variable.
+
+```{r pheno_fn, eval=T, echo=F}
+if (geo_GPL=="") {pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} else {pheno_fn=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withQC.txt")}
+```
+
+```{r pheno_fn_show, eval=T, echo=F}
+cat(paste0("pheno_fn = '", pheno_fn,"'"))
 ```
 
 Install the prerequisite R packages if they do not exist
@@ -512,7 +522,6 @@ res=read.csv(contrast_fn)
 ```{r vol_utility, eval=T, echo=F}
 # The volplot_func function generates volcano plots
 volplot_func <- function(df,qval_column,title) {
-  if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
   if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else {          
@@ -531,7 +540,8 @@ volplot_func <- function(df,qval_column,title) {
     # log10 transformed q values
     df$logqval <- -log10(qval)
     diffgenes <- df$ID[qval<0.05] #Create list of all DEG's
-    cat(length(diffgenes), "differentially expressed genes have been identified based on", qval_column)
+    signum = paste0(length(diffgenes), " significant genes based on ", qval_column)
+    if (missing(title)) {title=signum}
     print(
     ggplot(df, aes(x = logFC, y = logqval, color=sig)) + geom_point() +
       theme_bw() +
@@ -729,9 +739,9 @@ pcaplot_func <- function(oligo.data, pc, group_var, legend) { # group_var: colum
     scale_color_manual(legend,values=group_col,na.value="grey")
 }
 
-# The pca_func function generates multiple pca plots for scan date, disease, treatment, and subject
+# The pca_func function generates multiple pca plots for scan date, disease, treatment, and Donor
 pca_func <- function(oligo.data, pc) {
-  group_vars=c("ScanDate_Group", "Status", "Subject")
+  group_vars=c("ScanDate_Group", "Status", "Donor")
   legends=c("ScanDate_Group", "Status", "Donor")
   idx_exist=c(1:length(group_vars))[group_vars%in%names(pData(oligo.data))] # obtain index of existing variables
   plot_list=list() # store plots in a list
