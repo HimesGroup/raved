@@ -431,8 +431,10 @@ densplot_func <- function(Mss) {
 
 # The raw_intensity_func function outputs raw probe intensity metrics
 raw_intensity_func <- function() {
-  if (!normdata) {Mss=log2(subsamp(exprs(raw.data)))} # use log2 transformed raw probe intensity
-  else {Mss=subsamp(exprs(raw.data))}
+  if (!normdata) {Mss=log2(subsamp(exprs(raw.data))) # use log2 transformed raw probe intensity
+  } else {
+    Mss=subsamp(exprs(raw.data))
+  }
   outlier_res=outlier_KS_func(Mss)
   outlier=names(outlier_res$outlier)
   boxplot=boxplot_func(Mss=Mss, outlier=outlier, ylab="Raw Probe Intensities")
@@ -448,7 +450,7 @@ pooled, overall distribution of the values.
 
 ```{r raw_intensity_outlier, eval=T, echo=F, warning=F}
 res_intensity=raw_intensity_func()
-outlier_intensity = names(res_intensity$outlier)
+outlier_intensity = res_intensity$outlier
 cat(length(outlier_intensity), "outlier(s) are detected in the raw intensity metrics.\n")
 if (length(outlier_intensity)>0) {cat("They are: ", outlier_intensity)}
 ```
@@ -469,7 +471,7 @@ res_intensity$densplot
 
 ### RNA Digestion
 
-Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5´ to the 3´ end. It is expected that probe intensities are lower at the 5´ end of a probe set when compared to the 3´end as RNA degradation starts from the 5´end of a molecule. RNA which is too degraded will shows a very high slope from 5´ to 3´. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
+Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5' to the 3' end. It is expected that probe intensities are lower at the 5' end of a probe set when compared to the 3´end as RNA degradation starts from the 5' end of a molecule. RNA which is too degraded will shows a very high slope from 5' to 3'. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
 
 This step requires R package affy that outputs the probes in each probe set matrix ordered from 5' to 3', while this function is not implemented in the oligo package.
 
@@ -667,8 +669,9 @@ MA_func <- function(){
   # Compute M-A metrics
   if (!normdata) {
     sMA <- MAcal_func(log2(exprs(raw.data)))
+  } else {
+    sMA <- MAcal_func(exprs(raw.data))
   }
-  else {sMA <- MAcal_func(exprs(raw.data))}
   outlier_res <- outlier_MA_func(exprs=sMA)
   outlier <- names(outlier_res$outlier)
   plot <- MAplot_func(sMA=sMA, outlier_res=outlier_res)
@@ -954,8 +957,11 @@ distplot_func <- function(m,outlier) {
 
 # The dist_func function outputs distance metrics
 dist_func <- function() {
-  if (!normdata) {m <- dist2(log2(exprs(raw.data)))}
-  else {m <- dist2(exprs(raw.data))}
+  if (!normdata) {
+    m <- dist2(log2(exprs(raw.data)))
+  } else {
+    m <- dist2(exprs(raw.data))
+  }
   
   outlier_res=outlier_dist_func(m)
   outlier=names(outlier_res$outlier)
@@ -987,8 +993,11 @@ PCA demonstrates information of the expression dataset in a reduced number of di
 # The pcastat_func function computes principal components
 pcastat_func <- function() {
   # obtain original expression data
-  if (!normdata) {raw.data.pca <- na.omit(log2(exprs(raw.data)))}
-  else {raw.data.pca <- na.omit(exprs(raw.data))} # remove NAs
+  if (!normdata) {
+    raw.data.pca <- na.omit(log2(exprs(raw.data)))
+  } else {
+    raw.data.pca <- na.omit(exprs(raw.data))
+  } # remove NAs
  
   # As scale function divides by the variance, the probe with the expression sd=0 across samples must be removed.
   sd <- apply(raw.data.pca,1,sd)
