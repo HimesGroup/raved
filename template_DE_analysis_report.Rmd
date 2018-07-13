@@ -125,7 +125,13 @@ phenosub_func <- function(){
   pheno.sub=subset(pheno,(Tissue%in%tissue)&(Treatment%in%treatment)&(Disease%in%disease))
   pheno.sub=droplevels(pheno.sub)
   # assign comparison to "Status" column
-  if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {pheno.sub$Status=pheno.sub$Treatment} else {pheno.sub$Status=pheno.sub$Disease}
+  if (length(treatment)==2) {
+    if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {
+      pheno.sub$Status=pheno.sub$Treatment} else {stop("Assigned treatment variables are not included in the Treatment column")}
+  } else if (length(disease)==2) {
+    if (identical(sort(levels(pheno.sub$Disease)),sort(c(con0,con1)))) {
+      pheno.sub$Status=pheno.sub$Disease} else {stop("Assigned treatment variables are not included in the Disease column")}
+  }
   pheno.sub$Status <-factor(pheno.sub$Status,levels=c(con0,con1))
   return(pheno.sub)
 }
@@ -134,6 +140,18 @@ phenosub_func <- function(){
 phenoqc_func <- function(outlier,pheno) {
   if (missing(outlier)) {pheno=subset(pheno, QC_Pass==1)} else {pheno=subset(pheno, Filename%in%outlier)}
   droplevels(pheno)
+}
+
+# The phenopair_func function excludes unpaired donor from analysis
+phenopair_func <- function(dat) {
+  unpaired_samp=names(which(table(dat$Donor)==1))
+  dat=dat[which(!dat$Donor%in%unpaired_samp),]
+  droplevels(pheno)
+  if (length(unpaired_samp)>0) {
+    cat(paste0(length(unpaired_samp)," sample(s) with unpaired donor are excluded from analysis\n"))
+    cat(paste(unpaired_samp,collapse=", "),"\n")
+  }
+  return(dat)
 }
 
 # The tbsum_func function generates summary of variables of interest
@@ -194,10 +212,22 @@ if (length(outlier)>0) {
 } else {pheno.of.interest=pheno.sub}
 ```
 
+Exclude samples missing the other paired donors in treatment comparisons
+
+```{r paired, eval=T, echo=F, results="asis"}
+if (length(treatment)==2) {paired=TRUE} else if (length(disease)==2) {paired=FALSE}
+```
+
+```{r pheno_paired, eval=T, echo=F, results="asis"}
+if (paired) {
+  pheno.of.interest <- phenopair_func(pheno.of.interest)
+}
+```
+
 ```{r pheno_sum, eval=T, echo=F, results="asis"}
-if (length(outlier)>0) {
+if (nrow(pheno.sub)!=nrow(pheno.of.interest)) {
   pandoc.table(tbsum_func(tb=pheno.sub), split.tables=Inf, caption="Summary of subsetted samples without QC")
-  pandoc.table(tbsum_func(tb=pheno.of.interest), split.tables=Inf, caption="Summary of subsetted samples without QC")
+  pandoc.table(tbsum_func(tb=pheno.of.interest), split.tables=Inf, caption="Summary of subsetted samples with QC")
 } else {pandoc.table(tbsum_func(tb=pheno.of.interest), split.tables=Inf, caption="Summary of subsetted samples")}
 
 # create a summary table for this comparison
@@ -389,7 +419,7 @@ nbatch_func <- function() {
 # The svamod_func function creates full and null models, and Checks if the batch and comparison status are confounded
 svamod_func <- function() {
   # Create a full model
-  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group) ) # full model (adjustment variables and variables of interest)
+  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$Donor)) # full model (adjustment variables and variables of interest)
   # Create a null model only including batch variables
   nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjustment variables only)
   # Check if the batch and comparison status are confounded
@@ -405,9 +435,13 @@ svamod_func <- function() {
 
 # The batcherror_func function assigns a variable batcherror to decide whether to adjust for batch effect under various scenarios
 batcherror_func <- function() {
-  if (nbatch==0) {batcherror="zero"}
-  else if (nbatch==1) {batcherror="one"}
-  else {if (batchadj) {batcherror="no"} else {batcherror="correlate"}}
+  if (nbatch==0) {
+    batcherror="zero"
+  } else if (nbatch==1) {
+    batcherror="one"
+  } else {
+    if (batchadj) {batcherror="no"} else {batcherror="correlate"}
+  }
   return(batcherror)
 }
 
