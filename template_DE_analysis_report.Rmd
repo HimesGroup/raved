@@ -419,7 +419,7 @@ nbatch_func <- function() {
 # The svamod_func function creates full and null models, and Checks if the batch and comparison status are confounded
 svamod_func <- function() {
   # Create a full model
-  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$Donor)) # full model (adjustment variables and variables of interest)
+  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)) # full model (adjustment variables and variables of interest)
   # Create a null model only including batch variables
   nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjustment variables only)
   # Check if the batch and comparison status are confounded
