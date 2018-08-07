@@ -513,24 +513,54 @@ anno_list[["GPL6947"]]="illuminaHumanv3.db"
 anno_list[["GPL10558"]]="illuminaHumanv4.db"
 ```
 
+```{r glpanno_func, echo=F}
+# glpanno_func creates anntoation vector based on GPL annotation from GEO
+glpanno_func <- function(GLP_ID){
+  gpl <- Table(getGEO(GLP_ID, destdir = "data"))
+  anno_vect <- gpl[,"GENE_SYMBOL"]
+  names(anno_vect) <- gpl[,"ID"]
+  return(anno_vect)
+}
+
+# ranno_func creates anntoation vector based on R annotation database
+ranno_func <- function(anno_lib){
+  # check if the annotation database is installed
+  if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
+  library(anno_lib, character.only=T)
+  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
+  x=get(anno_symbol)
+  # Get the probe identifiers that are mapped to a gene symbol
+  mapped_probes <- mappedkeys(x)
+  # Convert to a list
+  xx <- as.list(x[mapped_probes])
+  # Convert list to annotation vector
+  anno_vect <- sapply(xx,function(x){x})
+  return(anno_vect)
+}
+
+# geneannot_func annotates gene symbol to DE result table
+geneannot_func <- function(tb, anno_vect) {
+  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
+  if (exists("anno_lib")) {
+    if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)}
+  }
+  tb$ID=as.character(tb$ID)
+  tb$SYMBOL=sapply(as.character(tb$ID), function(x){anno_vect[x]})
+  tb[order(tb$P.Value),]
+}
+```
+
 ```{r anno_utility, eval=T, echo=F, warning=F, message=F}
 # install corresponding annotation database if it is not installed
 anno_array=annotation(rma.data.of.interest)
 cat("The platform used is", anno_array, "\n")
-if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
-anno_lib=anno_list[[anno_array]] # use the annotation database
-cat("The corresponding R annotation database package is", anno_lib,"\n")
-# check if the annotation database is installed
-if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
-library(anno_lib, character.only=T)
-
-geneannot_func <- function(tb) {
-  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
-  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
-  if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)} 
-  tb$ID=as.character(tb$ID)
-  tb$SYMBOL=sapply(as.character(tb$ID), function(x) mget(x, env=get(anno_symbol), ifnotfound=NA)[[1]])
-  tb[order(tb$P.Value),]
+if (!anno_array%in%names(anno_list)) {
+  cat("Annotate using GPL annotation in GEO\n")
+  anno_vect=glpanno_func(GLP_ID=anno_array)
+} else {
+  anno_lib=anno_list[[anno_array]] # use the annotation database
+  cat("The corresponding R annotation database package is", anno_lib,"\n")
+  anno_vect <- ranno_func(anno_lib=anno_lib)
 }
 ```
 
@@ -540,7 +570,7 @@ contrast_fn=paste0(resdir,"/", contrast_name, ".csv")
 ```
 
 ```{r anno_tb, eval=T, echo=F, warning=F, message=F}
-contrast_table <- geneannot_func(tb=contrast_table)
+contrast_table <- geneannot_func(tb=contrast_table, anno_vect=anno_vect)
 write.csv(contrast_table, file=contrast_fn, row.names = FALSE)
 ```
 
@@ -782,6 +812,7 @@ pca_func <- function(oligo.data, pc) {
   for (i in idx_exist) {
     group_var=group_vars[i]
     legend=legends[i]
+    pData(oligo.data)[,group_var]=as.factor(as.character(pData(oligo.data)[,group_var])) # convert to factor
     nlevel=nlevels(pData(oligo.data)[,group_var]) # levels of the variable
     if (group_var=="ScanDate_Group"|(nlevel>=2&nlevel<=10)) {
       if (group_var=="Status") {
