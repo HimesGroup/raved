@@ -502,6 +502,8 @@ anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
 anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
+anno_list[["GPL571"]]="hgu133a2.db"
+anno_list[["pd.hg.u133a.2"]]="hgu133a2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
@@ -545,7 +547,8 @@ geneannot_func <- function(tb, anno_vect) {
     if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)}
   }
   tb$ID=as.character(tb$ID)
-  tb$SYMBOL=sapply(as.character(tb$ID), function(x){anno_vect[x]})
+  tb$SYMBOL=sapply(as.character(tb$ID), function(x){if (x%in%names(anno_vect)){anno_vect[x]} else {"NA"}})
+  tb$SYMBOL[which(tb$SYMBOL=="")]="NA"
   tb[order(tb$P.Value),]
 }
 ```

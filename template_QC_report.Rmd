@@ -136,13 +136,17 @@ pheno.raw <- pData(phenoData(gse))
 for (x in names(pheno.raw)) {
   vec=pheno.raw[,x]
   if (!is.numeric(vec)) {
+    # create an empty data frame to save any tables with non-native characters
+    tb_nonnative=data.frame()
     vec <- factor(vec)
     if (nlevels(vec)>5) {res=table(droplevels(vec[vec%in%levels(vec)[1:5]]))} else {res=table(vec)}
     res=data.frame(res)
     names(res) <- c(x,"counts")
   }
   if (is.numeric(vec)){res=summary(vec)}
-  pandoc.table(res, justify='left',split.tables=Inf, caption=x)
+  # Try if any existing non-native characters cause pander error
+  if (class(try(pandoc.table(res, justify='left',split.tables=Inf, caption=x), silent = T))=="try-error") {tb_nonnative=res}
+  if (nrow(tb_nonnative)>1){print(res)}
 }
 ```
 
