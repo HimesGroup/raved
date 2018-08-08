@@ -547,7 +547,8 @@ geneannot_func <- function(tb, anno_vect) {
     if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)}
   }
   tb$ID=as.character(tb$ID)
-  tb$SYMBOL=sapply(as.character(tb$ID), function(x){anno_vect[x]})
+  tb$SYMBOL=sapply(as.character(tb$ID), function(x){if (x%in%names(anno_vect)){anno_vect[x]} else {"NA"}})
+  tb$SYMBOL[which(tb$SYMBOL=="")]="NA"
   tb[order(tb$P.Value),]
 }
 ```
