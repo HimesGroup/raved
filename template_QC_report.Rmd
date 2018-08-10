@@ -39,10 +39,6 @@ normdata=FALSE
 shortname_func <- function(x){gsub("^(.*)\\.(cel|CEL).gz","\\1",x)}
 ```
 
-```{r check_var, eval=T, echo=F}
-if (!(platform %in%c("Affymetrix","Illumina","Agilent"))) {stop("Only Affymetrix, Illumina, Agilent are available platforms.")}
-```
-
 Install the prerequisite R packages if they do not exist
 
 * GEOquery 
@@ -94,20 +90,19 @@ Download the GEO series matrix files if available.
 ```{r geo_download, eval=T, echo=F, message=F, warning=F}
 # check if GEO matrix file exists
 geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
-if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+if (length(geo_fn)==0) { # GEO matrix file is not downloaded
   gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
   if (length(gselms)>1) {  # multiple platform
     gpls=sapply(gselms,annotation)
     cat("This study was performed in multiple platforms:\n")
     cat(unname(gpls),"\n")
     cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
-    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")}
-    else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
   } else {idx=1}
   gse <- gselms[[idx]]
-} else if (length(geo_fn)==1) {
+} else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
   gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-} else { # multiple platform
+} else { # GEO matrix file is alreadly downloaded and has multiple platforms
   cat("This study was performed in multiple platforms:\n")
   cat(geo_fn)
   cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
@@ -136,17 +131,13 @@ pheno.raw <- pData(phenoData(gse))
 for (x in names(pheno.raw)) {
   vec=pheno.raw[,x]
   if (!is.numeric(vec)) {
-    # create an empty data frame to save any tables with non-native characters
-    tb_nonnative=data.frame()
     vec <- factor(vec)
     if (nlevels(vec)>5) {res=table(droplevels(vec[vec%in%levels(vec)[1:5]]))} else {res=table(vec)}
     res=data.frame(res)
     names(res) <- c(x,"counts")
   }
   if (is.numeric(vec)){res=summary(vec)}
-  # Try if any existing non-native characters cause pander error
-  if (class(try(pandoc.table(res, justify='left',split.tables=Inf, caption=x), silent = T))=="try-error") {tb_nonnative=res}
-  if (nrow(tb_nonnative)>1){print(res)}
+  pandoc.table(res, justify='left',split.tables=Inf, caption=x)
 }
 ```
 
@@ -173,11 +164,6 @@ cat("suppldata =",as.character(suppldata))
 ```
 
 These raw phenotypic variables are not informative (e.g. description, characteristics_ch1 and source_name_ch1) and not created in a consice way.  Select useful phenotype variables and manually modify them using a standard format (e.g. GEO_ID, Donor, Disease, Treatment, Age, Gender). **This step requires mannual inspection.**
-
-
-**Required column: ** GEO_ID, Tissue, Disease, Treatment, Donor (if cells are treated in vitro). For disease-only study, assign "baseline" to Treatment column. For treatment-only study, assign "healthy" or the disease type used to Disease column.
-
-Column naming is rigid for these columns, because pipeline scripts will recognize these name strings, although the column order can be changed.
 
 ```{r pheno_new, eval=T, echo=F, message=F, warning=F, results="hide"}
 library(dplyr)
@@ -215,21 +201,30 @@ suppldownload_func <- function() {
 if (suppldata) {
   # The sampall_func function obtains the supplementary filenames of all samples of interest
   sampall_func <- function() {basename(as.character(pheno.raw$supplementary_file))}
+
+  # The existall_func function check whether all supplementary files in GEO phenotype exist in the data directory
+  existall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # check if all supplementary_file name from GEO phenotype are within the downloaded folder
+    return(all(sapply(sampall_func(),function(x)x%in%raw_fn)))
+  }
+
   # The rawall_func function obtains all files in the data directory with full path
-  rawall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=paste(sampall_func(),collapse="|"),full.names=T)}
+  rawall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # obtain supplementary data with path
+    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())])
+  }
 
   # Download raw data files (e.g. .cel) if available.
   # Check whether the supplementary files already exist. Otherwise download from GEO
-  samp_exist=basename(rawall_func())
-  samp_need=sampall_func()
+  samp_exist=existall_func()
 
-  if (length(samp_exist)==0) {
+  if (!samp_exist) {
     suppldownload_func()
-  } else {
-    if (!identical(samp_exist,samp_need)) {suppldownload_func()}
   }
-  samp_exist=basename(rawall_func()) # updated the existing samples
-  if (!identical(samp_exist,samp_need)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+  samp_exist=existall_func() # updated the existing samples
+  if (!samp_exist) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
 }
 ```
 
@@ -329,7 +324,7 @@ exprs(raw.data)=apply(exprs(raw.data),2,function(x){replace(x,which(x<=0),NA)})
 
 
 ```{r check_norm, eval=T, echo=F, warning=F}
-if (!suppldata|platform!="Affymetrix") {
+if (!suppldata) {
   boxplot(exprs(gse),col=colour_list,main="Probe Intensity matrix of raw data",xaxt="n") # note gse here are non-coverted expression values
   legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
   if (!normdata) {

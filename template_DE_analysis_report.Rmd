@@ -264,52 +264,65 @@ suppldownload_func <- function() {
   untar(paste0(datadir,"/",geo_id,"/",geo_id,"_RAW.tar"), exdir=paste0(datadir,"/",geo_id,"/data")) # extract the zip file
 }
 
+# If supplementary data is available, download supplimentary raw data files
 if (usesuppl) {
   # The sampall_func function obtains the supplementary filenames of all samples of interest
   sampall_func <- function() {basename(as.character(pheno$Filename))}
+
+  # The existall_func function check whether all supplementary files in GEO phenotype exist in the data directory
+  existall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # check if all supplementary_file name from GEO phenotype are within the downloaded folder
+    return(all(sapply(sampall_func(),function(x)x%in%raw_fn)))
+  }
+
   # The rawall_func function obtains all files in the data directory with full path
-  rawall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=paste(sampall_func(),collapse="|"),full.names=T)}
+  rawall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # obtain supplementary data with path
+    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())])
+  }
 
   # Download raw data files (e.g. .cel) if available.
   # Check whether the supplementary files already exist. Otherwise download from GEO
-  samp_exist=basename(rawall_func())
-  samp_need=sampall_func()
+  samp_exist=existall_func()
 
-  if (length(samp_exist)==0) {
+  if (!samp_exist) {
     suppldownload_func()
-  } else {
-    if (!identical(samp_exist,samp_need)) {suppldownload_func()}
   }
-  samp_exist=basename(rawall_func()) # updated the existing samples
-  matching <- mapply(grepl, x=samp_exist, pattern=samp_need)
-  if (FALSE %in% matching) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
-  
+  samp_exist=existall_func() # updated the existing samples
+  if (!samp_exist) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
   raw.data <- read.celfiles(raw.files)
 }
 ```
 
+
 Generate raw.data object using expression matrix from GEO (for platforms other than Affymetrix).
 
 ```{r geomatrix_readin, eval=T, echo=F, message=F, warning=F}
 if (!usesuppl) {
-# check if GEO matrix file exists
-  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
-  if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+  # check if GEO matrix file exists
+  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
+  if (length(geo_fn)==0) { # # GEO matrix file is not downloaded
     gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
-   
     if (length(gselms)>1) {  # multiple platform
-      message("This study was performed in multiple platforms")
-      idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
-      gse <- gselms[[idx]]
-    } else {gse <- gselms[[1]]}
-  } else if (length(geo_fn)==1) {
+      gpls=sapply(gselms,annotation)
+      cat("This study was performed in multiple platforms:\n")
+      cat(unname(gpls),"\n")
+      cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+      if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+    } else {idx=1}
+    gse <- gselms[[idx]]
+  } else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
     gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-  } else { # multiple platform
-    message("This study was performed in multiple platforms")
-    geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
-    gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+  } else { # GEO matrix file is alreadly downloaded and has multiple platforms
+    cat("This study was performed in multiple platforms:\n")
+    cat(geo_fn)
+    cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); geo_fn <-geo_fn[grep(geo_GPL,geo_fn)];gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)}
   }
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.data=gse
@@ -327,7 +340,9 @@ subdat_func <- function(raw.data, pheno) {
   pData(raw.data) <- pheno
   row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
   # check if the sample names derived from expression data match those in phenotype file
-  if (!identical(row.names(pData(raw.data)),as.character(pheno$Filename))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
+  if (usesuppl) {matching=mapply(identical,row.names(pData(raw.data)),as.character(pheno$Filename))}
+  else {matching=mapply(grepl,row.names(pData(raw.data)),as.character(pheno$Filename))}
+  if (!all(matching)) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
   return(raw.data)
 }
 raw.data.of.interest=subdat_func(raw.data=raw.data, pheno=pheno.of.interest)
@@ -515,11 +530,19 @@ anno_list[["GPL6947"]]="illuminaHumanv3.db"
 anno_list[["GPL10558"]]="illuminaHumanv4.db"
 ```
 
+If using GPL annotation from GEO, note that gene symbol annotation in different GPL may have different column names.
+
+```{r symbol_list, eval=T, echo=F}
+symbol_list=list()
+# Agilent
+symbol_list[["GPL17077"]]="GENE_SYMBOL"
+```
+
 ```{r glpanno_func, echo=F}
 # glpanno_func creates anntoation vector based on GPL annotation from GEO
-glpanno_func <- function(GLP_ID){
-  gpl <- Table(getGEO(GLP_ID, destdir = "data"))
-  anno_vect <- gpl[,"GENE_SYMBOL"]
+glpanno_func <- function(GPL_ID){
+  gpl <- Table(getGEO(GPL_ID, destdir = "data"))
+  if (GPL_ID%in%names(symbol_list)) {anno_vect <- gpl[,symbol_col]} else {anno_vect <- gpl[,"gene name"]}
   names(anno_vect) <- gpl[,"ID"]
   return(anno_vect)
 }
@@ -549,6 +572,8 @@ geneannot_func <- function(tb, anno_vect) {
   tb$ID=as.character(tb$ID)
   tb$SYMBOL=sapply(as.character(tb$ID), function(x){if (x%in%names(anno_vect)){anno_vect[x]} else {"NA"}})
   tb$SYMBOL[which(tb$SYMBOL=="")]="NA"
+  # remove probes with NA in logFC column
+  tb <- tb[!is.na(tb$logFC),]
   tb[order(tb$P.Value),]
 }
 ```
@@ -559,7 +584,7 @@ anno_array=annotation(rma.data.of.interest)
 cat("The platform used is", anno_array, "\n")
 if (!anno_array%in%names(anno_list)) {
   cat("Annotate using GPL annotation in GEO\n")
-  anno_vect=glpanno_func(GLP_ID=anno_array)
+  anno_vect=glpanno_func(GPL_ID=anno_array)
 } else {
   anno_lib=anno_list[[anno_array]] # use the annotation database
   cat("The corresponding R annotation database package is", anno_lib,"\n")
