@@ -131,13 +131,17 @@ pheno.raw <- pData(phenoData(gse))
 for (x in names(pheno.raw)) {
   vec=pheno.raw[,x]
   if (!is.numeric(vec)) {
+    # create an empty data frame to save any tables with non-native characters
+    tb_nonnative=data.frame()
     vec <- factor(vec)
     if (nlevels(vec)>5) {res=table(droplevels(vec[vec%in%levels(vec)[1:5]]))} else {res=table(vec)}
     res=data.frame(res)
     names(res) <- c(x,"counts")
   }
   if (is.numeric(vec)){res=summary(vec)}
-  pandoc.table(res, justify='left',split.tables=Inf, caption=x)
+  # Try if any existing non-native characters cause pander error
+  if (class(try(pandoc.table(res, justify='left',split.tables=Inf, caption=x), silent = T))=="try-error") {tb_nonnative=res}
+  if (nrow(tb_nonnative)>1){print(res)}
 }
 ```
 
@@ -324,7 +328,7 @@ exprs(raw.data)=apply(exprs(raw.data),2,function(x){replace(x,which(x<=0),NA)})
 
 
 ```{r check_norm, eval=T, echo=F, warning=F}
-if (!suppldata) {
+if (!suppldata|platform!="Affymetrix") {
   boxplot(exprs(gse),col=colour_list,main="Probe Intensity matrix of raw data",xaxt="n") # note gse here are non-coverted expression values
   legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
   if (!normdata) {
@@ -539,6 +543,7 @@ RNAdegaffy_func <- function(data){ # input a list of probe set matrix with rows 
 }
 
 # The RNAdeg_func function generates RNA degradation plots
+# return a logical variable whether this array type can be read by affy.
 RNAdeg_func <- function() {
   # 1. Read in raw data as an AffyBatch object
   library(affy) # for Affymetrix microarray-specific QC analysis
@@ -556,7 +561,9 @@ RNAdeg_func <- function() {
 ```
 
 ```{r RNAdeg_plot, eval=T, echo=F, message=F, warning=F}
-if (platform=="Affymetrix"&suppldata) {RNAdeg_func()}
+if (platform=="Affymetrix"&suppldata) {
+  if (grepl('hta.2.0',annotation(raw.data))) {cat("The affy package is not designed for this array type.\n")} else {RNAdeg_func()}
+}
 ```
 
 ### Distribution of Perfect Match (PM) and Mismatch (MM)
@@ -798,10 +805,12 @@ Outlier detection is applied by computing a sum of the absolute values of low fr
 
 ```{r spatial_outlier, eval=T, echo=F, message=F, warning=F}
 if (platform=="Affymetrix"&suppldata) {
-  res_spatial=spatial_func()
-  outlier_spatial=res_spatial$outlier
-  cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
-  if (length(outlier_spatial)>0) {cat("They are: ", outlier_spatial)}
+    if (grepl('hta.2.0',annotation(raw.data))) {cat("The affy package is not designed for this array type.\n")} else {
+    res_spatial=spatial_func()
+    outlier_spatial=res_spatial$outlier
+    cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
+    if (length(outlier_spatial)>0) {cat("They are: ", outlier_spatial)}
+  }
 }
 ```
   
@@ -811,7 +820,9 @@ Spatial distribution plots of samples with the 4 highest and lowest values of Fa
 
 ```{r spatial_plot, eval=T, echo=F, fig.height=10, fig.width=7}
 if (platform=="Affymetrix"&suppldata) {
-  res_spatial$plot
+    if (grepl('hta.2.0',annotation(raw.data))) {cat("The affy package is not designed for this array type.\n")} else {
+    res_spatial$plot
+  }
 }
 ```
 
