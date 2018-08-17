@@ -516,6 +516,7 @@ anno_list=list()
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
 anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
+anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
 anno_list[["GPL571"]]="hgu133a2.db"
 anno_list[["pd.hg.u133a.2"]]="hgu133a2.db"
