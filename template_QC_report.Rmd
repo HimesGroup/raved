@@ -19,7 +19,7 @@ This report shows the QC steps for gene expression microarry data from GEO study
 
 Mannually change the variables for GEO ID (geo_id), data directory (datadir) and result directory (resdir).
 
-```{r var, eval=T, echo=F}
+```{r var, eval=T, echo=T}
 # GEO id
 geo_id="GSE4917"
 # directory stores GEO data
@@ -31,7 +31,7 @@ resdir="results"
 **Note that** three variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms) and normdata (whether the expression matrix is normalized), need to be **manually** re-defined in the following steps after look into the datasets. A shortname_func function is suggested to be updated.
 
 
-```{r var2, eval=T, echo=F}
+```{r var2, eval=T, echo=T}
 platform="Affymetrix"
 geo_GPL=""
 normdata=FALSE
@@ -67,7 +67,7 @@ install.packages("dplyr")
 install.packages("pander")
 ```
 
-Load the necessary libraries
+Load the necessary libraries. Load affy and dplyr packages later since they will mask other functions.
 
 ```{r lib, eval=T, echo=F, message=F, warning=F}
 library(GEOquery)
@@ -79,7 +79,6 @@ library(Hmisc) # compute hoeffd (Hoeffding's D statistics) for MA plot
 library(devtools) # compuate PCs
 library(preprocessCore) # quantile normalization
 library(pander)
-library(dplyr)
 ```
 
 ## GEO Data Download and Phenotype Preparation
@@ -91,20 +90,19 @@ Download the GEO series matrix files if available.
 ```{r geo_download, eval=T, echo=F, message=F, warning=F}
 # check if GEO matrix file exists
 geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
-if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+if (length(geo_fn)==0) { # GEO matrix file is not downloaded
   gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
   if (length(gselms)>1) {  # multiple platform
     gpls=sapply(gselms,annotation)
     cat("This study was performed in multiple platforms:\n")
     cat(unname(gpls),"\n")
     cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
-    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")}
-    else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
   } else {idx=1}
   gse <- gselms[[idx]]
-} else if (length(geo_fn)==1) {
+} else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
   gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-} else { # multiple platform
+} else { # GEO matrix file is alreadly downloaded and has multiple platforms
   cat("This study was performed in multiple platforms:\n")
   cat(geo_fn)
   cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
@@ -133,27 +131,52 @@ pheno.raw <- pData(phenoData(gse))
 for (x in names(pheno.raw)) {
   vec=pheno.raw[,x]
   if (!is.numeric(vec)) {
+    # create an empty data frame to save any tables with non-native characters
+    tb_nonnative=data.frame()
     vec <- factor(vec)
     if (nlevels(vec)>5) {res=table(droplevels(vec[vec%in%levels(vec)[1:5]]))} else {res=table(vec)}
     res=data.frame(res)
     names(res) <- c(x,"counts")
   }
   if (is.numeric(vec)){res=summary(vec)}
-  pandoc.table(res, justify='left',split.tables=Inf, caption=x)
+  # Try if any existing non-native characters cause pander error
+  if (class(try(pandoc.table(res, justify='left',split.tables=Inf, caption=x), silent = T))=="try-error") {tb_nonnative=res}
+  if (nrow(tb_nonnative)>1){print(res)}
 }
-if ("NONE"%in%levels(pheno.raw$supplementary_file)) {suppldata=FALSE} else {suppldata=TRUE}
 ```
 
+**Manual inspection:** Automatically define the variable "suppldata" (i.e. TRUE or FALSE) showing whether supplementary data is available. Note that samples with supplementary file column equals "None" are excluded from analysis.
 
-These raw phenotypic variables are not informative (e.g. description, characteristics_ch1 and source_name_ch1) and not created in a consice way.  Select useful phenotype variables and manually modify them using a standard format (e.g. GEO_ID, Subject, Disease, Treatment, Age, Gender). **This step requires mannual inspection.**
+```{r suppldata_define, eval=T, echo=F}
+# check if there is missing supplementary_file
+if (all(pheno.raw$supplementary_file=="NONE")) {
+  suppldata=FALSE
+} else if (any(pheno.raw$supplementary_file=="NONE")) {
+  sample_nosuppl=as.character(pheno.raw$geo_accession[pheno.raw$supplementary_file=="NONE"])
+  pheno.raw=pheno.raw[which(pheno.raw$supplementary_file!="NONE"),]
+  cat("Not all samples have defined supplementary file path:\n")
+  cat(paste(sample_nosuppl,collapse=", "),"\n")
+  cat("These samples are excluded from analysis\n")
+  suppldata=TRUE
+} else {suppldata=TRUE}
+```
 
-```{r pheno_new, eval=T, warning=F, echo=F, results="asis"}
+Defined suppldata variable
+
+```{r suppldata_show, eval=T, echo=F}
+cat("suppldata =",as.character(suppldata))
+```
+
+These raw phenotypic variables are not informative (e.g. description, characteristics_ch1 and source_name_ch1) and not created in a consice way.  Select useful phenotype variables and manually modify them using a standard format (e.g. GEO_ID, Donor, Disease, Treatment, Age, Gender). **This step requires mannual inspection.**
+
+```{r pheno_new, eval=T, echo=F, message=F, warning=F, results="hide"}
+library(dplyr)
 cols <- c("title","geo_accession","source_name_ch1")
 pheno <- pheno.raw %>%
   dplyr::select(cols) %>%
   dplyr::mutate(GEO_ID=geo_accession) %>%
-  dplyr::mutate(Subject=gsub("^.*biological (.*)$","\\1",title)) %>%
-  dplyr::mutate(Sample=paste(geo_accession,Subject,sep="_")) %>%
+  dplyr::mutate(Donor=gsub("^.*biological (.*)$","\\1",title)) %>%
+  dplyr::mutate(Sample=paste(geo_accession,Donor,sep="_")) %>%
   dplyr::mutate(Tissue="MCF10A-Myc") %>%
   dplyr::mutate(treatment_time=gsub("^.*for (\\d+.*)$","\\1",source_name_ch1)) %>%
   dplyr::mutate(treatment_time=gsub(" ","",treatment_time)) %>%
@@ -163,9 +186,8 @@ pheno <- pheno.raw %>%
   dplyr::mutate(Age="35") %>%
   dplyr::mutate_if(is.character,as.factor) %>%
   dplyr::select((length(cols)+1):ncol(.)) # remove original columns
+detach("package:dplyr")
 ```
-
-**Manual inspection:** Re-define the variable "suppldata" (i.e. TRUE or FALSE) showing whether supplementary data is available.
 
 ### Raw intensity data download
 
@@ -183,21 +205,30 @@ suppldownload_func <- function() {
 if (suppldata) {
   # The sampall_func function obtains the supplementary filenames of all samples of interest
   sampall_func <- function() {basename(as.character(pheno.raw$supplementary_file))}
+
+  # The existall_func function check whether all supplementary files in GEO phenotype exist in the data directory
+  existall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # check if all supplementary_file name from GEO phenotype are within the downloaded folder
+    return(all(sapply(sampall_func(),function(x)x%in%raw_fn)))
+  }
+
   # The rawall_func function obtains all files in the data directory with full path
-  rawall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=paste(sampall_func(),collapse="|"),full.names=T)}
+  rawall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # obtain supplementary data with path
+    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())])
+  }
 
   # Download raw data files (e.g. .cel) if available.
   # Check whether the supplementary files already exist. Otherwise download from GEO
-  samp_exist=basename(rawall_func())
-  samp_need=sampall_func()
+  samp_exist=existall_func()
 
-  if (length(samp_exist)==0) {
+  if (!samp_exist) {
     suppldownload_func()
-  } else {
-    if (!identical(samp_exist,samp_need)) {suppldownload_func()}
   }
-  samp_exist=basename(rawall_func()) # updated the existing samples
-  if (!identical(samp_exist,samp_need)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+  samp_exist=existall_func() # updated the existing samples
+  if (!samp_exist) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
 }
 ```
 
@@ -246,7 +277,8 @@ pData(raw.data) <- pheno
 row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
 # Check if the sample names derived from expression data match those in phenotype file
 rowname <- gsub("^(.*).(cel|CEL|txt|Txt).gz","\\1",row.names(pData(raw.data)))
-if (!identical(rowname,as.character(pData(raw.data)$GEO_ID))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
+matching <- mapply(grepl, x=rowname, pattern=as.character(pData(raw.data)$GEO_ID))
+if (FALSE %in% matching) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
 ```
 
 Show the summary of phenotype variables and the sample size for different groups
@@ -282,7 +314,7 @@ colour_list <- colours[1:i]
 names(colour_list) <- levels(pheno[,varuse]) 
 ```
 
-If gene expression matrix data is used, check if they are normalized/log-transformed. After **manual inspection**, assign a logistic variable "normdata" (whether needs log2 transformation/normalization or not for QC). If normdata is FASE, we generate boxplots for log2-transformed and Quantile-normalization of log2-transformed data. Note that if the data are normalized, it is not likely to detect the outliers based on the intensity metrices.
+If gene expression matrix data is used, check if they are normalized/log-transformed. After **manual inspection**, assign a logistic variable "normdata" (whether needs log2 transformation/normalization or not for QC). If normdata is FALSE, we generate boxplots for log2-transformed and Quantile-normalization of log2-transformed data. Note that if the data are normalized, it is not likely to detect the outliers based on the intensity metrices.
 
 If negative/zero intensity values are present, convert them to NAs.
 
@@ -296,7 +328,7 @@ exprs(raw.data)=apply(exprs(raw.data),2,function(x){replace(x,which(x<=0),NA)})
 
 
 ```{r check_norm, eval=T, echo=F, warning=F}
-if (!suppldata) {
+if (!suppldata|platform!="Affymetrix") {
   boxplot(exprs(gse),col=colour_list,main="Probe Intensity matrix of raw data",xaxt="n") # note gse here are non-coverted expression values
   legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
   if (!normdata) {
@@ -411,8 +443,10 @@ densplot_func <- function(Mss) {
 
 # The raw_intensity_func function outputs raw probe intensity metrics
 raw_intensity_func <- function() {
-  if (!normdata) {Mss=log2(subsamp(exprs(raw.data)))} # use log2 transformed raw probe intensity
-  else {Mss=subsamp(exprs(raw.data))}
+  if (!normdata) {Mss=log2(subsamp(exprs(raw.data))) # use log2 transformed raw probe intensity
+  } else {
+    Mss=subsamp(exprs(raw.data))
+  }
   outlier_res=outlier_KS_func(Mss)
   outlier=names(outlier_res$outlier)
   boxplot=boxplot_func(Mss=Mss, outlier=outlier, ylab="Raw Probe Intensities")
@@ -428,7 +462,7 @@ pooled, overall distribution of the values.
 
 ```{r raw_intensity_outlier, eval=T, echo=F, warning=F}
 res_intensity=raw_intensity_func()
-outlier_intensity = names(res_intensity$outlier)
+outlier_intensity = res_intensity$outlier
 cat(length(outlier_intensity), "outlier(s) are detected in the raw intensity metrics.\n")
 if (length(outlier_intensity)>0) {cat("They are: ", outlier_intensity)}
 ```
@@ -449,7 +483,8 @@ res_intensity$densplot
 
 ### RNA Digestion
 
-Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5? to the 3? end. It is expected that probe intensities are lower at the 5? end of a probe set when compared to the 3?end as RNA degradation starts from the 5?end of a molecule. RNA which is too degraded will shows a very high slope from 5? to 3?. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
+
+Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5' to the 3' end. It is expected that probe intensities are lower at the 5' end of a probe set when compared to the 3´end as RNA degradation starts from the 5' end of a molecule. RNA which is too degraded will shows a very high slope from 5' to 3'. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
 
 This step requires R package affy that outputs the probes in each probe set matrix ordered from 5' to 3', while this function is not implemented in the oligo package.
 
@@ -509,6 +544,7 @@ RNAdegaffy_func <- function(data){ # input a list of probe set matrix with rows 
 }
 
 # The RNAdeg_func function generates RNA degradation plots
+# return a logical variable whether this array type can be read by affy.
 RNAdeg_func <- function() {
   # 1. Read in raw data as an AffyBatch object
   library(affy) # for Affymetrix microarray-specific QC analysis
@@ -526,7 +562,9 @@ RNAdeg_func <- function() {
 ```
 
 ```{r RNAdeg_plot, eval=T, echo=F, message=F, warning=F}
-if (platform=="Affymetrix"&suppldata) {RNAdeg_func()}
+if (platform=="Affymetrix"&suppldata) {
+  if (grepl('hta.2.0',annotation(raw.data))) {cat("The affy package is not designed for this array type.\n")} else {RNAdeg_func()}
+}
 ```
 
 ### Distribution of Perfect Match (PM) and Mismatch (MM)
@@ -647,8 +685,9 @@ MA_func <- function(){
   # Compute M-A metrics
   if (!normdata) {
     sMA <- MAcal_func(log2(exprs(raw.data)))
+  } else {
+    sMA <- MAcal_func(exprs(raw.data))
   }
-  else {sMA <- MAcal_func(exprs(raw.data))}
   outlier_res <- outlier_MA_func(exprs=sMA)
   outlier <- names(outlier_res$outlier)
   plot <- MAplot_func(sMA=sMA, outlier_res=outlier_res)
@@ -767,10 +806,12 @@ Outlier detection is applied by computing a sum of the absolute values of low fr
 
 ```{r spatial_outlier, eval=T, echo=F, message=F, warning=F}
 if (platform=="Affymetrix"&suppldata) {
-  res_spatial=spatial_func()
-  outlier_spatial=res_spatial$outlier
-  cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
-  if (length(outlier_spatial)>0) {cat("They are: ", outlier_spatial)}
+    if (grepl('hta.2.0',annotation(raw.data))) {cat("The affy package is not designed for this array type.\n")} else {
+    res_spatial=spatial_func()
+    outlier_spatial=res_spatial$outlier
+    cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
+    if (length(outlier_spatial)>0) {cat("They are: ", outlier_spatial)}
+  }
 }
 ```
   
@@ -780,7 +821,9 @@ Spatial distribution plots of samples with the 4 highest and lowest values of Fa
 
 ```{r spatial_plot, eval=T, echo=F, fig.height=10, fig.width=7}
 if (platform=="Affymetrix"&suppldata) {
-  res_spatial$plot
+    if (grepl('hta.2.0',annotation(raw.data))) {cat("The affy package is not designed for this array type.\n")} else {
+    res_spatial$plot
+  }
 }
 ```
 
@@ -934,8 +977,11 @@ distplot_func <- function(m,outlier) {
 
 # The dist_func function outputs distance metrics
 dist_func <- function() {
-  if (!normdata) {m <- dist2(log2(exprs(raw.data)))}
-  else {m <- dist2(exprs(raw.data))}
+  if (!normdata) {
+    m <- dist2(log2(exprs(raw.data)))
+  } else {
+    m <- dist2(exprs(raw.data))
+  }
   
   outlier_res=outlier_dist_func(m)
   outlier=names(outlier_res$outlier)
@@ -967,8 +1013,11 @@ PCA demonstrates information of the expression dataset in a reduced number of di
 # The pcastat_func function computes principal components
 pcastat_func <- function() {
   # obtain original expression data
-  if (!normdata) {raw.data.pca <- na.omit(log2(exprs(raw.data)))}
-  else {raw.data.pca <- na.omit(exprs(raw.data))} # remove NAs
+  if (!normdata) {
+    raw.data.pca <- na.omit(log2(exprs(raw.data)))
+  } else {
+    raw.data.pca <- na.omit(exprs(raw.data))
+  } # remove NAs
  
   # As scale function divides by the variance, the probe with the expression sd=0 across samples must be removed.
   sd <- apply(raw.data.pca,1,sd)
@@ -1002,10 +1051,10 @@ pcaplot_func <- function(pc, group_var,legend) { # group_var: column name for a 
     scale_color_manual(legend,values=group_col,na.value="grey")
 }
 
-# The pca_func function generates multiple pca plots for scan date, disease, treatment, and subject
+# The pca_func function generates multiple pca plots for scan date, disease, treatment, and Donor
 pca_func <- function(pc) {
-  group_vars=c("ScanDate_Group", "Disease", "Treatment", "Subject")
-  legends=c("ScanDate_Group", "Disease", "Treatment", "Donor")
+  group_vars=c("ScanDate_Group", "Disease", "Treatment", "Tissue", "Donor")
+  legends=c("ScanDate_Group", "Disease", "Treatment", "Tissue", "Donor")
   idx_exist=c(1:length(group_vars))[group_vars%in%names(pData(raw.data))] # obtain index of existing variables
   plot_list=list() # store plots in a list
   for (i in idx_exist) {
@@ -1030,7 +1079,7 @@ pandoc.table(res_pca$tb,split.tables=Inf, caption="Variance explained")
 
 2. PCA plots
 
-PCA plots are generated using the first two principle components colored by known factors (e.g. treatment/disease conditions, donors and scan dates), visualizing similarities between arrays and these similarities' correlation to batch effects.
+PCA plots are generated using the first two principle components colored by known factors (e.g. treatment/disease conditions, tissue, donors and scan dates), visualizing similarities between arrays and these similarities' correlation to batch effects.
 
 ```{r pca_plot, eval=T, echo=F}
 plot_list=pca_func(pc=res_pca$pc)

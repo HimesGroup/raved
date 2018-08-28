@@ -28,7 +28,7 @@ Outputs:
 
 Mannually change the variables for GEO ID (geo_id), data directory (datadir), result directory (resdir), tissue, disease/treatment status, and comparison conditions
 
-```{r, var, eval=T, echo=F}
+```{r, var, eval=T, echo=T}
 # GEO id
 geo_id="GSE4917"
 # direcotry stores GEO data
@@ -50,13 +50,23 @@ disease="healthy"
 Manually change these variables according to dataset:
 **Note that** four variables, platform (platform), geo_GPL (GPL id for analysis if the samples in the study were scanned on multiple platforms), usesuppl (whether to use supplementary data for DE analysis), and normdata (whether the expression matrix is normalized), need to be **manually** defined based on the QC reports. A shortname_func function is suggested to be updated.
 
-```{r var2, eval=T, echo=F}
+```{r var2, eval=T, echo=T}
 platform="Affymetrix"
 geo_GPL=""
 usesuppl=TRUE
 normdata=FALSE
 # The shortname_func function shortens the sample name shown in the plots. To start, define shortname_func <- function(x){x}
 shortname_func <- function(x){gsub("^(.*).(cel|CEL).gz","\\1",x)} # remove .cel.gz or .CEL.gz from sample
+```
+
+Automatically generate phenotype file variable pheno_fn if it is generated from QC step, otherwise manually assign this variable.
+
+```{r pheno_fn, eval=T, echo=F}
+if (geo_GPL=="") {pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} else {pheno_fn=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withQC.txt")}
+```
+
+```{r pheno_fn_show, eval=T, echo=F}
+cat(paste0("pheno_fn = '", pheno_fn,"'"))
 ```
 
 Install the prerequisite R packages if they do not exist
@@ -115,7 +125,13 @@ phenosub_func <- function(){
   pheno.sub=subset(pheno,(Tissue%in%tissue)&(Treatment%in%treatment)&(Disease%in%disease))
   pheno.sub=droplevels(pheno.sub)
   # assign comparison to "Status" column
-  if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {pheno.sub$Status=pheno.sub$Treatment} else {pheno.sub$Status=pheno.sub$Disease}
+  if (length(treatment)==2) {
+    if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {
+      pheno.sub$Status=pheno.sub$Treatment} else {stop("Assigned treatment variables are not included in the Treatment column")}
+  } else if (length(disease)==2) {
+    if (identical(sort(levels(pheno.sub$Disease)),sort(c(con0,con1)))) {
+      pheno.sub$Status=pheno.sub$Disease} else {stop("Assigned treatment variables are not included in the Disease column")}
+  }
   pheno.sub$Status <-factor(pheno.sub$Status,levels=c(con0,con1))
   return(pheno.sub)
 }
@@ -124,6 +140,18 @@ phenosub_func <- function(){
 phenoqc_func <- function(outlier,pheno) {
   if (missing(outlier)) {pheno=subset(pheno, QC_Pass==1)} else {pheno=subset(pheno, Filename%in%outlier)}
   droplevels(pheno)
+}
+
+# The phenopair_func function excludes unpaired donor from analysis
+phenopair_func <- function(dat) {
+  unpaired_samp=names(which(table(dat$Donor)==1))
+  dat=dat[which(!dat$Donor%in%unpaired_samp),]
+  droplevels(pheno)
+  if (length(unpaired_samp)>0) {
+    cat(paste0(length(unpaired_samp)," sample(s) with unpaired donor are excluded from analysis\n"))
+    cat(paste(unpaired_samp,collapse=", "),"\n")
+  }
+  return(dat)
 }
 
 # The tbsum_func function generates summary of variables of interest
@@ -184,10 +212,22 @@ if (length(outlier)>0) {
 } else {pheno.of.interest=pheno.sub}
 ```
 
+Exclude samples missing the other paired donors in treatment comparisons
+
+```{r paired, eval=T, echo=F, results="asis"}
+if (length(treatment)==2) {paired=TRUE} else if (length(disease)==2) {paired=FALSE}
+```
+
+```{r pheno_paired, eval=T, echo=F, results="asis"}
+if (paired) {
+  pheno.of.interest <- phenopair_func(pheno.of.interest)
+}
+```
+
 ```{r pheno_sum, eval=T, echo=F, results="asis"}
-if (length(outlier)>0) {
+if (nrow(pheno.sub)!=nrow(pheno.of.interest)) {
   pandoc.table(tbsum_func(tb=pheno.sub), split.tables=Inf, caption="Summary of subsetted samples without QC")
-  pandoc.table(tbsum_func(tb=pheno.of.interest), split.tables=Inf, caption="Summary of subsetted samples without QC")
+  pandoc.table(tbsum_func(tb=pheno.of.interest), split.tables=Inf, caption="Summary of subsetted samples with QC")
 } else {pandoc.table(tbsum_func(tb=pheno.of.interest), split.tables=Inf, caption="Summary of subsetted samples")}
 
 # create a summary table for this comparison
@@ -224,51 +264,65 @@ suppldownload_func <- function() {
   untar(paste0(datadir,"/",geo_id,"/",geo_id,"_RAW.tar"), exdir=paste0(datadir,"/",geo_id,"/data")) # extract the zip file
 }
 
+# If supplementary data is available, download supplimentary raw data files
 if (usesuppl) {
   # The sampall_func function obtains the supplementary filenames of all samples of interest
   sampall_func <- function() {basename(as.character(pheno$Filename))}
+
+  # The existall_func function check whether all supplementary files in GEO phenotype exist in the data directory
+  existall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # check if all supplementary_file name from GEO phenotype are within the downloaded folder
+    return(all(sapply(sampall_func(),function(x)x%in%raw_fn)))
+  }
+
   # The rawall_func function obtains all files in the data directory with full path
-  rawall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=paste(sampall_func(),collapse="|"),full.names=T)}
+  rawall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # obtain supplementary data with path
+    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())])
+  }
 
   # Download raw data files (e.g. .cel) if available.
   # Check whether the supplementary files already exist. Otherwise download from GEO
-  samp_exist=basename(rawall_func())
-  samp_need=sampall_func()
+  samp_exist=existall_func()
 
-  if (length(samp_exist)==0) {
+  if (!samp_exist) {
     suppldownload_func()
-  } else {
-    if (!identical(samp_exist,samp_need)) {suppldownload_func()}
   }
-  samp_exist=basename(rawall_func()) # updated the existing samples
-  if (!identical(samp_exist,samp_need)) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
-  
+  samp_exist=existall_func() # updated the existing samples
+  if (!samp_exist) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
   raw.data <- read.celfiles(raw.files)
 }
 ```
 
+
 Generate raw.data object using expression matrix from GEO (for platforms other than Affymetrix).
 
 ```{r geomatrix_readin, eval=T, echo=F, message=F, warning=F}
 if (!usesuppl) {
-# check if GEO matrix file exists
-  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
-  if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+  # check if GEO matrix file exists
+  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
+  if (length(geo_fn)==0) { # # GEO matrix file is not downloaded
     gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
-   
     if (length(gselms)>1) {  # multiple platform
-      message("This study was performed in multiple platforms")
-      idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
-      gse <- gselms[[idx]]
-    } else {gse <- gselms[[1]]}
-  } else if (length(geo_fn)==1) {
+      gpls=sapply(gselms,annotation)
+      cat("This study was performed in multiple platforms:\n")
+      cat(unname(gpls),"\n")
+      cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+      if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+    } else {idx=1}
+    gse <- gselms[[idx]]
+  } else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
     gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-  } else { # multiple platform
-    message("This study was performed in multiple platforms")
-    geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
-    gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+  } else { # GEO matrix file is alreadly downloaded and has multiple platforms
+    cat("This study was performed in multiple platforms:\n")
+    cat(geo_fn)
+    cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); geo_fn <-geo_fn[grep(geo_GPL,geo_fn)];gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)}
   }
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.data=gse
@@ -286,7 +340,9 @@ subdat_func <- function(raw.data, pheno) {
   pData(raw.data) <- pheno
   row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
   # check if the sample names derived from expression data match those in phenotype file
-  if (!identical(row.names(pData(raw.data)),as.character(pheno$Filename))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
+  if (usesuppl) {matching=mapply(identical,row.names(pData(raw.data)),as.character(pheno$Filename))}
+  else {matching=mapply(grepl,row.names(pData(raw.data)),as.character(pheno$Filename))}
+  if (!all(matching)) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
   return(raw.data)
 }
 raw.data.of.interest=subdat_func(raw.data=raw.data, pheno=pheno.of.interest)
@@ -378,7 +434,7 @@ nbatch_func <- function() {
 # The svamod_func function creates full and null models, and Checks if the batch and comparison status are confounded
 svamod_func <- function() {
   # Create a full model
-  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group) ) # full model (adjustment variables and variables of interest)
+  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)) # full model (adjustment variables and variables of interest)
   # Create a null model only including batch variables
   nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjustment variables only)
   # Check if the batch and comparison status are confounded
@@ -394,9 +450,13 @@ svamod_func <- function() {
 
 # The batcherror_func function assigns a variable batcherror to decide whether to adjust for batch effect under various scenarios
 batcherror_func <- function() {
-  if (nbatch==0) {batcherror="zero"}
-  else if (nbatch==1) {batcherror="one"}
-  else {if (batchadj) {batcherror="no"} else {batcherror="correlate"}}
+  if (nbatch==0) {
+    batcherror="zero"
+  } else if (nbatch==1) {
+    batcherror="one"
+  } else {
+    if (batchadj) {batcherror="no"} else {batcherror="correlate"}
+  }
   return(batcherror)
 }
 
@@ -456,7 +516,10 @@ anno_list=list()
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
 anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
+anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
+anno_list[["GPL571"]]="hgu133a2.db"
+anno_list[["pd.hg.u133a.2"]]="hgu133a2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
@@ -468,24 +531,65 @@ anno_list[["GPL6947"]]="illuminaHumanv3.db"
 anno_list[["GPL10558"]]="illuminaHumanv4.db"
 ```
 
+If using GPL annotation from GEO, note that gene symbol annotation in different GPL may have different column names.
+
+```{r symbol_list, eval=T, echo=F}
+symbol_list=list()
+# Agilent
+symbol_list[["GPL17077"]]="GENE_SYMBOL"
+```
+
+```{r glpanno_func, echo=F}
+# glpanno_func creates anntoation vector based on GPL annotation from GEO
+glpanno_func <- function(GPL_ID){
+  gpl <- Table(getGEO(GPL_ID, destdir = "data"))
+  if (GPL_ID%in%names(symbol_list)) {anno_vect <- gpl[,symbol_col]} else {anno_vect <- gpl[,"gene name"]}
+  names(anno_vect) <- gpl[,"ID"]
+  return(anno_vect)
+}
+
+# ranno_func creates anntoation vector based on R annotation database
+ranno_func <- function(anno_lib){
+  # check if the annotation database is installed
+  if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
+  library(anno_lib, character.only=T)
+  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
+  x=get(anno_symbol)
+  # Get the probe identifiers that are mapped to a gene symbol
+  mapped_probes <- mappedkeys(x)
+  # Convert to a list
+  xx <- as.list(x[mapped_probes])
+  # Convert list to annotation vector
+  anno_vect <- sapply(xx,function(x){x})
+  return(anno_vect)
+}
+
+# geneannot_func annotates gene symbol to DE result table
+geneannot_func <- function(tb, anno_vect) {
+  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
+  if (exists("anno_lib")) {
+    if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)}
+  }
+  tb$ID=as.character(tb$ID)
+  tb$SYMBOL=sapply(as.character(tb$ID), function(x){if (x%in%names(anno_vect)){anno_vect[x]} else {"NA"}})
+  tb$SYMBOL[which(tb$SYMBOL=="")]="NA"
+  # remove probes with NA in logFC column
+  tb <- tb[!is.na(tb$logFC),]
+  tb[order(tb$P.Value),]
+}
+```
+
 ```{r anno_utility, eval=T, echo=F, warning=F, message=F}
 # install corresponding annotation database if it is not installed
 anno_array=annotation(rma.data.of.interest)
 cat("The platform used is", anno_array, "\n")
-if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
-anno_lib=anno_list[[anno_array]] # use the annotation database
-cat("The corresponding R annotation database package is", anno_lib,"\n")
-# check if the annotation database is installed
-if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
-library(anno_lib, character.only=T)
-
-geneannot_func <- function(tb) {
-  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
-  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
-  if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)} 
-  tb$ID=as.character(tb$ID)
-  tb$SYMBOL=sapply(as.character(tb$ID), function(x) mget(x, env=get(anno_symbol), ifnotfound=NA)[[1]])
-  tb[order(tb$P.Value),]
+if (!anno_array%in%names(anno_list)) {
+  cat("Annotate using GPL annotation in GEO\n")
+  anno_vect=glpanno_func(GPL_ID=anno_array)
+} else {
+  anno_lib=anno_list[[anno_array]] # use the annotation database
+  cat("The corresponding R annotation database package is", anno_lib,"\n")
+  anno_vect <- ranno_func(anno_lib=anno_lib)
 }
 ```
 
@@ -495,7 +599,7 @@ contrast_fn=paste0(resdir,"/", contrast_name, ".csv")
 ```
 
 ```{r anno_tb, eval=T, echo=F, warning=F, message=F}
-contrast_table <- geneannot_func(tb=contrast_table)
+contrast_table <- geneannot_func(tb=contrast_table, anno_vect=anno_vect)
 write.csv(contrast_table, file=contrast_fn, row.names = FALSE)
 ```
 
@@ -511,7 +615,6 @@ res=read.csv(contrast_fn)
 ```{r vol_utility, eval=T, echo=F}
 # The volplot_func function generates volcano plots
 volplot_func <- function(df,qval_column,title) {
-  if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
   if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else {          
@@ -529,6 +632,9 @@ volplot_func <- function(df,qval_column,title) {
     color <- levels(df$sig)
     # log10 transformed q values
     df$logqval <- -log10(qval)
+    diffgenes <- df$ID[qval<0.05] #Create list of all DEG's
+    signum = paste0(length(diffgenes), " significant genes based on ", qval_column)
+    if (missing(title)) {title=signum}
     print(
     ggplot(df, aes(x = logFC, y = logqval, color=sig)) + geom_point() +
       theme_bw() +
@@ -726,15 +832,16 @@ pcaplot_func <- function(oligo.data, pc, group_var, legend) { # group_var: colum
     scale_color_manual(legend,values=group_col,na.value="grey")
 }
 
-# The pca_func function generates multiple pca plots for scan date, disease, treatment, and subject
+# The pca_func function generates multiple pca plots for scan date, disease, treatment, and Donor
 pca_func <- function(oligo.data, pc) {
-  group_vars=c("ScanDate_Group", "Status", "Subject")
+  group_vars=c("ScanDate_Group", "Status", "Donor")
   legends=c("ScanDate_Group", "Status", "Donor")
   idx_exist=c(1:length(group_vars))[group_vars%in%names(pData(oligo.data))] # obtain index of existing variables
   plot_list=list() # store plots in a list
   for (i in idx_exist) {
     group_var=group_vars[i]
     legend=legends[i]
+    pData(oligo.data)[,group_var]=as.factor(as.character(pData(oligo.data)[,group_var])) # convert to factor
     nlevel=nlevels(pData(oligo.data)[,group_var]) # levels of the variable
     if (group_var=="ScanDate_Group"|(nlevel>=2&nlevel<=10)) {
       if (group_var=="Status") {
