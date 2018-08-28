@@ -483,7 +483,8 @@ res_intensity$densplot
 
 ### RNA Digestion
 
-Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5' to the 3' end. It is expected that probe intensities are lower at the 5' end of a probe set when compared to the 3´end as RNA degradation starts from the 5' end of a molecule. RNA which is too degraded will shows a very high slope from 5' to 3'. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
+
+Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5' to the 3' end. It is expected that probe intensities are lower at the 5' end of a probe set when compared to the 3Â´end as RNA degradation starts from the 5' end of a molecule. RNA which is too degraded will shows a very high slope from 5' to 3'. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
 
 This step requires R package affy that outputs the probes in each probe set matrix ordered from 5' to 3', while this function is not implemented in the oligo package.
 
@@ -570,7 +571,7 @@ if (platform=="Affymetrix"&suppldata) {
 
 There are two paired probe types: perfect match (PM) and of mismatched (MM) probes. A PM probe matches a strand of cDNA, while the corresponding MM probe differs from the PM by a change in the central nucleotide. A probe set is called present if the intensity value of PM is significantly larger than MM. However, the Affymetrix approach is under attack because between 15%-30% of the MM are greater than the PM. For some newer arrays, MM probes are not used. If the number of PMs is not equal to that of MMs, this might be a PM-only array.
 
-If both PM and MM are present, the density curves of log2 PM ana MM intensities are generated, where MM probes are expected to have smaller log2-intensity at the peak than PM probes due to their nonspecific hybridization.
+If both PM and MM are present, the density curves of log2 PM and MM intensities are generated, where MM probes are expected to have smaller log2-intensity at the peak than PM probes due to their nonspecific hybridization.
 
 ```{r PMMM_utility, eval=T, echo=F}
 PMMM_func <- function() {
