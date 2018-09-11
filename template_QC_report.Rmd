@@ -185,7 +185,7 @@ pheno <- pheno.raw %>%
   dplyr::mutate(Disease="healthy") %>%
   dplyr::mutate(Age="35") %>%
   dplyr::mutate_if(is.character,as.factor) %>%
-  dplyr::select((length(cols)+1):ncol(.)) # remove original columns
+  dplyr::select(-one_of(cols)) # remove original columns
 detach("package:dplyr")
 ```
 
