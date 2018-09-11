@@ -185,7 +185,7 @@ pheno <- pheno.raw %>%
   dplyr::mutate(Disease="healthy") %>%
   dplyr::mutate(Age="35") %>%
   dplyr::mutate_if(is.character,as.factor) %>%
-  dplyr::select((length(cols)+1):ncol(.)) # remove original columns
+  dplyr::select(-one_of(cols)) # remove original columns
 detach("package:dplyr")
 ```
 
@@ -195,7 +195,7 @@ Download supplementary raw data files if available. Analysis using raw intensity
 
 
 ```{r suppl_download, eval=T, echo=F}
-# The suppdownload_func function downloads the supplimentary raw data files from GEO and unextract the zip file
+# The suppdownload_func function downloads the supplimentary raw data files from GEO and extract the zip file
 suppldownload_func <- function() {
   getGEOSuppFiles(geo_id,baseDir=datadir) #download GEO files
   untar(paste0(datadir,"/",geo_id,"/",geo_id,"_RAW.tar"), exdir=paste0(datadir,"/",geo_id,"/data")) # extract the zip file
