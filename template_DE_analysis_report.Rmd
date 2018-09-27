@@ -212,12 +212,24 @@ if (length(outlier)>0) {
 } else {pheno.of.interest=pheno.sub}
 ```
 
-Exclude samples missing the other paired donors in treatment comparisons
+Define paired variable.
+
+If the same donors underwent treated and untreated condition, gene expression pattens are likely influenced by the same donor. Therefore, in this case, we adjust for Donor in limma regression as well as in sva batch-effect adjustment where both scan date and donor will be used as a known covariate (if donor is not correlated with scan date). For treatments/medication received by different patient groups, donor will not be adjusted.
 
 ```{r paired, eval=T, echo=F, results="asis"}
-if (length(treatment)==2) {paired=TRUE} else if (length(disease)==2) {paired=FALSE}
+if (length(disease)==2) {
+  paired=FALSE
+} else if (length(disease)==1) {
+  if (all((pheno.sub$Donor)==1)) {paired=FALSE} # if treatment is in different donors
+  else {paired=TRUE} # if treatment is in samd donors
+}
 ```
 
+```{r paired_show, eval=T, echo=F}
+cat("paired =",as.character(paired))
+```
+
+Exclude samples missing the other paired donors in treatment comparisons
 ```{r pheno_paired, eval=T, echo=F, results="asis"}
 if (paired) {
   pheno.of.interest <- phenopair_func(pheno.of.interest)
@@ -397,10 +409,17 @@ if (!normdata) {
 ### Pairwise Comparison between Status
 
 ```{r limma_utility, eval=T, echo=F, results="asis"}
-limma_func <- function() { # here only con0, con1 are used in comparisons. use a function to reduce the factor levels
-  # Create a design model matrix for linear model. Fit a linear model using design matrix model.
-  design = model.matrix(~ -1+factor(rma.data.of.interest$Status)) # create design model matrix
-  colnames(design) = levels(factor(rma.data.of.interest$Status))
+limma_func <- function(paired=FALSE) { # here only con0, con1 are used in comparisons. use a function to reduce the factor levels
+  if (paired) {
+    cat("Donor is adjusted in this regression\n")
+    # Create a design model matrix for linear model. Fit a linear model using design matrix model.
+    design = model.matrix(~ -1+factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$Donor)) # create design model matrix
+    colnames(design) = c(levels(factor(rma.data.of.interest$Status)),levels(factor(rma.data.of.interest$Donor))[-1])
+  } else {
+    # Create a design model matrix for linear model. Fit a linear model using design matrix model.
+    design = model.matrix(~ -1+factor(rma.data.of.interest$Status)) # create design model matrix
+    colnames(design) = levels(factor(rma.data.of.interest$Status))
+  }
   fit = lmFit(rma.data.of.interest, design) # fit a linear model to estimate the fold changes and standard error
   # Create a contrast group and fit it in a linear model
   data.contrast = makeContrasts(contrasts=paste(c(con1,con0),collapse="-"),levels = design) # create a contrast group by comparing con1 vs con0
@@ -408,13 +427,12 @@ limma_func <- function() { # here only con0, con1 are used in comparisons. use a
   fit2 = eBayes(fit2) # adjust fit coefficients using an empirical Bayes moderation of standard errors
   return(list(design=design,data.contrast=data.contrast,fit2=fit2))
 }
-
 ```
 
 Fit a linear model to RMA log-intensity values, fit this model to a contrast matrix for the comparison of interest, and apply empirical Bayes smoothing to obtain more precise standard errors.
 
 ```{r limma, eval=T, echo=F, message=F, warning=F, results="asis"}
-res_DE=limma_func()
+res_DE=limma_func(paired=paired)
 fit2=res_DE$fit2
 pandoc.table(data.frame(Sample=rma.data.of.interest$Sample,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
 pandoc.table(as.data.frame(res_DE$data.contrast), caption="A contract matrix for comparison")
@@ -432,19 +450,40 @@ nbatch_func <- function() {
 }
 
 # The svamod_func function creates full and null models, and Checks if the batch and comparison status are confounded
-svamod_func <- function() {
+svamod_func <- function(paired=FALSE) {
   # Create a full model
-  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)) # full model (adjustment variables and variables of interest)
+  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)) # full model (adjusted variables and variables of interest)
   # Create a null model only including batch variables
-  nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjustment variables only)
-  # Check if the batch and comparison status are confounded
-  if (class(try(solve(t(modBatch)%*%modBatch),silent=T))=="matrix") {batchadj=TRUE} else {batchadj=FALSE; message("The batch and comparison status are highly confounded")}
+  nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjusted variables only)
+  # Check if the scan date and comparison status are confounded
+  if (class(try(solve(t(modBatch)%*%modBatch),silent=T))=="matrix") {batchadj=TRUE} else {batchadj=FALSE; message("The scan date and comparison status are highly confounded")}
   # summary of the full model
   tb.fullmod <- as.data.frame(modBatch)
   names(tb.fullmod) <- c("Intercept",levels(rma.data.of.interest$Status)[-1],levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
   # summary of the null model
   tb.nullmod <- as.data.frame(nullBatch)
   names(tb.nullmod) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
+
+  if ((paired)&(batchadj)) { # same donor treatment adjust for donor
+    # Test if donor and scandate are correlated
+    modBatch1 = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)+factor(rma.data.of.interest$Donor)) # full model including donor
+    nullBatch1 =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)+factor(rma.data.of.interest$Donor)) # null model including donor
+    # summary of the full model
+    tb.fullmod1 <- as.data.frame(modBatch1)
+    names(tb.fullmod1) <- c("Intercept",levels(rma.data.of.interest$Status)[-1],levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1],levels(droplevels(rma.data.of.interest$Donor))[-1])
+    # summary of the null model
+    tb.nullmod1 <- as.data.frame(nullBatch1)
+    names(tb.nullmod1) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1],levels(droplevels(rma.data.of.interest$Donor))[-1])
+      
+    # check if scandate correlated with donor
+    if (class(try(solve(t(modBatch1)%*%modBatch1),silent=T))=="matrix") {
+      modBatch=modBatch1
+      nullBatch=nullBatch1
+      tb.fullmod=tb.fullmod1
+      tb.nullmod=tb.nullmod1
+    } else {cat("Scan date and donor are highly confounded. Only adjust for scan date.\n"); print(tb.nullmod1)}
+  }
+
   return(list(modBatch=modBatch, nullBatch=nullBatch, tb.fullmod=tb.fullmod, tb.nullmod=tb.nullmod, batchadj=batchadj))
 }
 
@@ -461,10 +500,10 @@ batcherror_func <- function() {
 }
 
 # The batchadj_func function outputs table with batch effects adjusted p-values
-batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table) {
+batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table, paired=paired) {
   if (batcherror=="no") {
-    modBatch=svamod_func()$modBatch
-    nullBatch=svamod_func()$nullBatch
+    modBatch=svamod_func(paired=paired)$modBatch
+    nullBatch=svamod_func(paired=paired)$nullBatch
     pValuesBatch=f.pvalue(exprs(rma.data.of.interest), modBatch, nullBatch) # get batch effect-adjusted p-values
     qValuesBatch=p.adjust(pValuesBatch, method="BH") # get q-values
     tb.sva <- data.frame(ID=names(pValuesBatch),pValuesBatch,qValuesBatch)
@@ -479,13 +518,13 @@ batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table) 
 }
 ```
 
-Check whether to adjust for batch effect.
+Check whether to adjust for scan date and donor.
 
 ```{r sva_check, eval=T, echo=F}
 nbatch=nbatch_func()
-if (nbatch>1) {res_svamod=svamod_func();batchadj=res_svamod$batchadj}
+if (nbatch>1) {res_svamod=svamod_func(paired=paired);batchadj=res_svamod$batchadj}
 batcherror=batcherror_func()
-if (batcherror=="zero") {cat("No batch variable is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The batch and the status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
+if (batcherror=="zero") {cat("No batch variable is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The scan date and the comparison status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
 ```
 
 Create a full model that includes all variables and a null model that only includes the batch variable. Note that as SVA computes the matrix x in t(batch model)%*%x=batch model, batch effect can be adjusted only when the solve function works.
@@ -501,7 +540,7 @@ if (nbatch>1) {
 Compute F statistic p-values adjusted for batch effect. Q-values are obtained by the Benjamini-Hochberg method. If the batch and the status are correlated, assign NA to the batch adjusted p- and q-values. If there is no batch variable or only one batch, assign p- and q-values computed by limma to the batch adjusted p-values
 
 ```{r sva_tb, eval=T, echo=F, results="asis"}
-contrast_table=batchadj_func(batcherror=batcherror, contrast_table=contrast_table)
+contrast_table=batchadj_func(batcherror=batcherror, contrast_table=contrast_table, paired=paired)
 pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " vs. ", con0, " summary"))
 ```
 
