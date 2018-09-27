@@ -464,6 +464,8 @@ svamod_func <- function(paired=FALSE) {
   tb.nullmod <- as.data.frame(nullBatch)
   names(tb.nullmod) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
 
+  donoradj=NULL # assign variable is donor is adjusted
+  tb.nullmod1=NULL # assign null matrix for donor adjustment
   if ((paired)&(batchadj)) { # same donor treatment adjust for donor
     # Test if donor and scandate are correlated
     modBatch1 = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)+factor(rma.data.of.interest$Donor)) # full model including donor
@@ -477,14 +479,15 @@ svamod_func <- function(paired=FALSE) {
       
     # check if scandate correlated with donor
     if (class(try(solve(t(modBatch1)%*%modBatch1),silent=T))=="matrix") {
+      donoradj="yes"
       modBatch=modBatch1
       nullBatch=nullBatch1
       tb.fullmod=tb.fullmod1
       tb.nullmod=tb.nullmod1
-    } else {cat("Scan date and donor are highly confounded. Only adjust for scan date.\n"); print(tb.nullmod1)}
+    }
   }
 
-  return(list(modBatch=modBatch, nullBatch=nullBatch, tb.fullmod=tb.fullmod, tb.nullmod=tb.nullmod, batchadj=batchadj))
+  return(list(modBatch=modBatch, nullBatch=nullBatch, tb.fullmod=tb.fullmod, tb.nullmod=tb.nullmod, batchadj=batchadj, donoradj=donoradj, tb.nullmod_donor=tb.nullmod1))
 }
 
 # The batcherror_func function assigns a variable batcherror to decide whether to adjust for batch effect under various scenarios
@@ -524,13 +527,20 @@ Check whether to adjust for scan date and donor.
 nbatch=nbatch_func()
 if (nbatch>1) {res_svamod=svamod_func(paired=paired);batchadj=res_svamod$batchadj}
 batcherror=batcherror_func()
-if (batcherror=="zero") {cat("No batch variable is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The scan date and the comparison status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
+if (batcherror=="zero") {cat("No scan date is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The scan date and the comparison status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
 ```
 
 Create a full model that includes all variables and a null model that only includes the batch variable. Note that as SVA computes the matrix x in t(batch model)%*%x=batch model, batch effect can be adjusted only when the solve function works.
 
 ```{r sva_mod, eval=T, echo=F, results="asis"}
 if (nbatch>1) {
+  if (paired) {
+    if (is.null(res_svamod$donoradj)) {
+      cat("Scan date and donor are highly confounded. See the matrix below.\n")
+      pandoc.table(res_svamod$tb.nullmod_donor, split.tables=Inf, caption="Null model matrix with scan date and donor")
+      cat("Only adjust for scan date.\n")
+    } else {cat("Both scan date and donor are adjusted.\n")}
+  }
   pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
   pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
 }
