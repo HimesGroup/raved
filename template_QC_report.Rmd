@@ -452,7 +452,7 @@ pooled, overall distribution of the values.
 res_intensity=raw_intensity_func()
 outlier_intensity = res_intensity$outlier
 cat(length(outlier_intensity), "outlier(s) are detected in the raw intensity metrics.\n")
-if (length(outlier_intensity)>0) {cat("They are: ", outlier_intensity)}
+if (length(outlier_intensity)>0) {cat("They are: ", shortname_func(outlier_intensity))}
 ```
 
 2. Boxplots for log2 raw probe intensity
@@ -687,7 +687,7 @@ Outlier detection is applied by computing a Hoeffding's statistic (Da) on the jo
 res_MA=MA_func()
 outlier_MA=res_MA$outlier
 cat(length(outlier_MA), "outliers are detected in the MA metrics.\n")
-if (length(outlier_MA)>0) {cat("They are: ", outlier_MA)}
+if (length(outlier_MA)>0) {cat("They are: ", shortname_func(outlier_MA))}
 ```
 
 2. MA plots
@@ -793,7 +793,7 @@ if (platform=="Affymetrix"&suppldata) {
   res_spatial=spatial_func()
   outlier_spatial=res_spatial$outlier
   cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
-  if (length(outlier_spatial)>0) {cat("They are: ", outlier_spatial)}
+  if (length(outlier_spatial)>0) {cat("They are: ", shortname_func(outlier_spatial))}
 }
 ```
   
@@ -843,7 +843,7 @@ if (platform=="Affymetrix"&suppldata) {
   res_RLE=RLE_func(Mss=fitPLM$Mss_RLE)
   outlier_RLE=res_RLE$outlier
   cat(length(outlier_RLE), "outlier(s) are detected in RLE metrics.\n")
-  if (length(outlier_RLE)>0) {cat("They are: ", outlier_RLE)}
+  if (length(outlier_RLE)>0) {cat("They are: ", shortname_func(outlier_RLE))}
 }
 ```
 
@@ -888,7 +888,7 @@ if (platform=="Affymetrix"&suppldata) {
   res_NUSE <- NUSE_func(Mss=fitPLM$Mss_NUSE)
   outlier_NUSE = res_NUSE$outlier # compute upper 75% quantile statistics to detect outliers
   cat(length(outlier_NUSE), "outlier(s) are detected in NUSE metrics.\n")
-  if (length(outlier_NUSE)>0) {cat("They are: ", outlier_NUSE)}
+  if (length(outlier_NUSE)>0) {cat("They are: ", shortname_func(outlier_NUSE))}
 }
 ```
 
@@ -977,7 +977,7 @@ Outlier detection is applied by computing the sum of the distances of one array 
 res_dist=dist_func()
 outlier_dist=res_dist$outlier
 cat(length(outlier_dist), "outlier(s) are detected in sample distance metrics.\n")
-if (length(outlier_dist)>0) {cat("They are: ", outlier_dist)}
+if (length(outlier_dist)>0) {cat("They are: ", shortname_func(outlier_dist))}
 ```
 
 2. Plot distance between samples
