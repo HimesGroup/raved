@@ -212,12 +212,24 @@ if (length(outlier)>0) {
 } else {pheno.of.interest=pheno.sub}
 ```
 
-Exclude samples missing the other paired donors in treatment comparisons
+Define paired variable.
+
+If the same donors underwent treated and untreated condition, gene expression pattens are likely influenced by the same donor. Therefore, in this case, we adjust for Donor in limma regression as well as in sva batch-effect adjustment where both scan date and donor will be used as a known covariate (if donor is not correlated with scan date). For treatments/medication received by different patient groups, donor will not be adjusted.
 
 ```{r paired, eval=T, echo=F, results="asis"}
-if (length(treatment)==2) {paired=TRUE} else if (length(disease)==2) {paired=FALSE}
+if (length(disease)==2) {
+  paired=FALSE
+} else if (length(disease)==1) {
+  if (all((pheno.sub$Donor)==1)) {paired=FALSE} # if treatment is in different donors
+  else {paired=TRUE} # if treatment is in samd donors
+}
 ```
 
+```{r paired_show, eval=T, echo=F}
+cat("paired =",as.character(paired))
+```
+
+Exclude samples missing the other paired donors in treatment comparisons
 ```{r pheno_paired, eval=T, echo=F, results="asis"}
 if (paired) {
   pheno.of.interest <- phenopair_func(pheno.of.interest)
@@ -264,52 +276,65 @@ suppldownload_func <- function() {
   untar(paste0(datadir,"/",geo_id,"/",geo_id,"_RAW.tar"), exdir=paste0(datadir,"/",geo_id,"/data")) # extract the zip file
 }
 
+# If supplementary data is available, download supplimentary raw data files
 if (usesuppl) {
   # The sampall_func function obtains the supplementary filenames of all samples of interest
   sampall_func <- function() {basename(as.character(pheno$Filename))}
+
+  # The existall_func function check whether all supplementary files in GEO phenotype exist in the data directory
+  existall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # check if all supplementary_file name from GEO phenotype are within the downloaded folder
+    return(all(sapply(sampall_func(),function(x)x%in%raw_fn)))
+  }
+
   # The rawall_func function obtains all files in the data directory with full path
-  rawall_func <- function() {list.files(path=paste0(datadir,"/",geo_id,"/data"),pattern=paste(sampall_func(),collapse="|"),full.names=T)}
+  rawall_func <- function() {
+    raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
+    # obtain supplementary data with path
+    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())])
+  }
 
   # Download raw data files (e.g. .cel) if available.
   # Check whether the supplementary files already exist. Otherwise download from GEO
-  samp_exist=basename(rawall_func())
-  samp_need=sampall_func()
+  samp_exist=existall_func()
 
-  if (length(samp_exist)==0) {
+  if (!samp_exist) {
     suppldownload_func()
-  } else {
-    if (!identical(samp_exist,samp_need)) {suppldownload_func()}
   }
-  samp_exist=basename(rawall_func()) # updated the existing samples
-  matching <- mapply(grepl, x=samp_exist, pattern=samp_need)
-  if (FALSE %in% matching) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
-  
+  samp_exist=existall_func() # updated the existing samples
+  if (!samp_exist) {stop("The .cel files obtained from GEO do not include all the samples of interest")}
+
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
   raw.data <- read.celfiles(raw.files)
 }
 ```
 
+
 Generate raw.data object using expression matrix from GEO (for platforms other than Affymetrix).
 
 ```{r geomatrix_readin, eval=T, echo=F, message=F, warning=F}
 if (!usesuppl) {
-# check if GEO matrix file exists
-  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))]
-  if (length(geo_fn)==0) { # matrix files are alreadly downloaded
+  # check if GEO matrix file exists
+  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
+  if (length(geo_fn)==0) { # # GEO matrix file is not downloaded
     gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
-   
     if (length(gselms)>1) {  # multiple platform
-      message("This study was performed in multiple platforms")
-      idx <- grep("GLP96|GPL570", attr(gselms, "names")) # only use data from GPL96
-      gse <- gselms[[idx]]
-    } else {gse <- gselms[[1]]}
-  } else if (length(geo_fn)==1) {
+      gpls=sapply(gselms,annotation)
+      cat("This study was performed in multiple platforms:\n")
+      cat(unname(gpls),"\n")
+      cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+      if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+    } else {idx=1}
+    gse <- gselms[[idx]]
+  } else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
     gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-  } else { # multiple platform
-    message("This study was performed in multiple platforms")
-    geo_fn <- geo_fn[grep("GLP96|GPL570",geo_fn)]
-    gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+  } else { # GEO matrix file is alreadly downloaded and has multiple platforms
+    cat("This study was performed in multiple platforms:\n")
+    cat(geo_fn)
+    cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); geo_fn <-geo_fn[grep(geo_GPL,geo_fn)];gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)}
   }
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.data=gse
@@ -327,7 +352,9 @@ subdat_func <- function(raw.data, pheno) {
   pData(raw.data) <- pheno
   row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
   # check if the sample names derived from expression data match those in phenotype file
-  if (!identical(row.names(pData(raw.data)),as.character(pheno$Filename))) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
+  if (usesuppl) {matching=mapply(identical,row.names(pData(raw.data)),as.character(pheno$Filename))}
+  else {matching=mapply(grepl,row.names(pData(raw.data)),as.character(pheno$Filename))}
+  if (!all(matching)) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
   return(raw.data)
 }
 raw.data.of.interest=subdat_func(raw.data=raw.data, pheno=pheno.of.interest)
@@ -382,10 +409,17 @@ if (!normdata) {
 ### Pairwise Comparison between Status
 
 ```{r limma_utility, eval=T, echo=F, results="asis"}
-limma_func <- function() { # here only con0, con1 are used in comparisons. use a function to reduce the factor levels
-  # Create a design model matrix for linear model. Fit a linear model using design matrix model.
-  design = model.matrix(~ -1+factor(rma.data.of.interest$Status)) # create design model matrix
-  colnames(design) = levels(factor(rma.data.of.interest$Status))
+limma_func <- function(paired=FALSE) { # here only con0, con1 are used in comparisons. use a function to reduce the factor levels
+  if (paired) {
+    cat("Donor is adjusted in this regression\n")
+    # Create a design model matrix for linear model. Fit a linear model using design matrix model.
+    design = model.matrix(~ -1+factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$Donor)) # create design model matrix
+    colnames(design) = c(levels(factor(rma.data.of.interest$Status)),levels(factor(rma.data.of.interest$Donor))[-1])
+  } else {
+    # Create a design model matrix for linear model. Fit a linear model using design matrix model.
+    design = model.matrix(~ -1+factor(rma.data.of.interest$Status)) # create design model matrix
+    colnames(design) = levels(factor(rma.data.of.interest$Status))
+  }
   fit = lmFit(rma.data.of.interest, design) # fit a linear model to estimate the fold changes and standard error
   # Create a contrast group and fit it in a linear model
   data.contrast = makeContrasts(contrasts=paste(c(con1,con0),collapse="-"),levels = design) # create a contrast group by comparing con1 vs con0
@@ -393,13 +427,12 @@ limma_func <- function() { # here only con0, con1 are used in comparisons. use a
   fit2 = eBayes(fit2) # adjust fit coefficients using an empirical Bayes moderation of standard errors
   return(list(design=design,data.contrast=data.contrast,fit2=fit2))
 }
-
 ```
 
 Fit a linear model to RMA log-intensity values, fit this model to a contrast matrix for the comparison of interest, and apply empirical Bayes smoothing to obtain more precise standard errors.
 
 ```{r limma, eval=T, echo=F, message=F, warning=F, results="asis"}
-res_DE=limma_func()
+res_DE=limma_func(paired=paired)
 fit2=res_DE$fit2
 pandoc.table(data.frame(Sample=rma.data.of.interest$Sample,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
 pandoc.table(as.data.frame(res_DE$data.contrast), caption="A contract matrix for comparison")
@@ -417,20 +450,44 @@ nbatch_func <- function() {
 }
 
 # The svamod_func function creates full and null models, and Checks if the batch and comparison status are confounded
-svamod_func <- function() {
+svamod_func <- function(paired=FALSE) {
   # Create a full model
-  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)) # full model (adjustment variables and variables of interest)
+  modBatch = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)) # full model (adjusted variables and variables of interest)
   # Create a null model only including batch variables
-  nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjustment variables only)
-  # Check if the batch and comparison status are confounded
-  if (class(try(solve(t(modBatch)%*%modBatch),silent=T))=="matrix") {batchadj=TRUE} else {batchadj=FALSE; message("The batch and comparison status are highly confounded")}
+  nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjusted variables only)
+  # Check if the scan date and comparison status are confounded
+  if (class(try(solve(t(modBatch)%*%modBatch),silent=T))=="matrix") {batchadj=TRUE} else {batchadj=FALSE; message("The scan date and comparison status are highly confounded")}
   # summary of the full model
   tb.fullmod <- as.data.frame(modBatch)
   names(tb.fullmod) <- c("Intercept",levels(rma.data.of.interest$Status)[-1],levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
   # summary of the null model
   tb.nullmod <- as.data.frame(nullBatch)
   names(tb.nullmod) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
-  return(list(modBatch=modBatch, nullBatch=nullBatch, tb.fullmod=tb.fullmod, tb.nullmod=tb.nullmod, batchadj=batchadj))
+
+  donoradj=NULL # assign variable is donor is adjusted
+  tb.nullmod1=NULL # assign null matrix for donor adjustment
+  if ((paired)&(batchadj)) { # same donor treatment adjust for donor
+    # Test if donor and scandate are correlated
+    modBatch1 = model.matrix(~factor(rma.data.of.interest$Status)+factor(rma.data.of.interest$ScanDate_Group)+factor(rma.data.of.interest$Donor)) # full model including donor
+    nullBatch1 =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)+factor(rma.data.of.interest$Donor)) # null model including donor
+    # summary of the full model
+    tb.fullmod1 <- as.data.frame(modBatch1)
+    names(tb.fullmod1) <- c("Intercept",levels(rma.data.of.interest$Status)[-1],levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1],levels(droplevels(rma.data.of.interest$Donor))[-1])
+    # summary of the null model
+    tb.nullmod1 <- as.data.frame(nullBatch1)
+    names(tb.nullmod1) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1],levels(droplevels(rma.data.of.interest$Donor))[-1])
+      
+    # check if scandate correlated with donor
+    if (class(try(solve(t(modBatch1)%*%modBatch1),silent=T))=="matrix") {
+      donoradj="yes"
+      modBatch=modBatch1
+      nullBatch=nullBatch1
+      tb.fullmod=tb.fullmod1
+      tb.nullmod=tb.nullmod1
+    }
+  }
+
+  return(list(modBatch=modBatch, nullBatch=nullBatch, tb.fullmod=tb.fullmod, tb.nullmod=tb.nullmod, batchadj=batchadj, donoradj=donoradj, tb.nullmod_donor=tb.nullmod1))
 }
 
 # The batcherror_func function assigns a variable batcherror to decide whether to adjust for batch effect under various scenarios
@@ -446,10 +503,10 @@ batcherror_func <- function() {
 }
 
 # The batchadj_func function outputs table with batch effects adjusted p-values
-batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table) {
+batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table, paired=paired) {
   if (batcherror=="no") {
-    modBatch=svamod_func()$modBatch
-    nullBatch=svamod_func()$nullBatch
+    modBatch=svamod_func(paired=paired)$modBatch
+    nullBatch=svamod_func(paired=paired)$nullBatch
     pValuesBatch=f.pvalue(exprs(rma.data.of.interest), modBatch, nullBatch) # get batch effect-adjusted p-values
     qValuesBatch=p.adjust(pValuesBatch, method="BH") # get q-values
     tb.sva <- data.frame(ID=names(pValuesBatch),pValuesBatch,qValuesBatch)
@@ -464,19 +521,26 @@ batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table) 
 }
 ```
 
-Check whether to adjust for batch effect.
+Check whether to adjust for scan date and donor.
 
 ```{r sva_check, eval=T, echo=F}
 nbatch=nbatch_func()
-if (nbatch>1) {res_svamod=svamod_func();batchadj=res_svamod$batchadj}
+if (nbatch>1) {res_svamod=svamod_func(paired=paired);batchadj=res_svamod$batchadj}
 batcherror=batcherror_func()
-if (batcherror=="zero") {cat("No batch variable is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The batch and the status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
+if (batcherror=="zero") {cat("No scan date is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The scan date and the comparison status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
 ```
 
 Create a full model that includes all variables and a null model that only includes the batch variable. Note that as SVA computes the matrix x in t(batch model)%*%x=batch model, batch effect can be adjusted only when the solve function works.
 
 ```{r sva_mod, eval=T, echo=F, results="asis"}
 if (nbatch>1) {
+  if (paired) {
+    if (is.null(res_svamod$donoradj)) {
+      cat("Scan date and donor are highly confounded. See the matrix below.\n")
+      pandoc.table(res_svamod$tb.nullmod_donor, split.tables=Inf, caption="Null model matrix with scan date and donor")
+      cat("Only adjust for scan date.\n")
+    } else {cat("Both scan date and donor are adjusted.\n")}
+  }
   pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
   pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
 }
@@ -486,7 +550,7 @@ if (nbatch>1) {
 Compute F statistic p-values adjusted for batch effect. Q-values are obtained by the Benjamini-Hochberg method. If the batch and the status are correlated, assign NA to the batch adjusted p- and q-values. If there is no batch variable or only one batch, assign p- and q-values computed by limma to the batch adjusted p-values
 
 ```{r sva_tb, eval=T, echo=F, results="asis"}
-contrast_table=batchadj_func(batcherror=batcherror, contrast_table=contrast_table)
+contrast_table=batchadj_func(batcherror=batcherror, contrast_table=contrast_table, paired=paired)
 pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " vs. ", con0, " summary"))
 ```
 
@@ -501,7 +565,10 @@ anno_list=list()
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
 anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
+anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
+anno_list[["GPL571"]]="hgu133a2.db"
+anno_list[["pd.hg.u133a.2"]]="hgu133a2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
@@ -513,24 +580,65 @@ anno_list[["GPL6947"]]="illuminaHumanv3.db"
 anno_list[["GPL10558"]]="illuminaHumanv4.db"
 ```
 
+If using GPL annotation from GEO, note that gene symbol annotation in different GPL may have different column names.
+
+```{r symbol_list, eval=T, echo=F}
+symbol_list=list()
+# Agilent
+symbol_list[["GPL17077"]]="GENE_SYMBOL"
+```
+
+```{r glpanno_func, echo=F}
+# glpanno_func creates anntoation vector based on GPL annotation from GEO
+glpanno_func <- function(GPL_ID){
+  gpl <- Table(getGEO(GPL_ID, destdir = "data"))
+  if (GPL_ID%in%names(symbol_list)) {anno_vect <- gpl[,symbol_col]} else {anno_vect <- gpl[,"gene name"]}
+  names(anno_vect) <- gpl[,"ID"]
+  return(anno_vect)
+}
+
+# ranno_func creates anntoation vector based on R annotation database
+ranno_func <- function(anno_lib){
+  # check if the annotation database is installed
+  if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
+  library(anno_lib, character.only=T)
+  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
+  x=get(anno_symbol)
+  # Get the probe identifiers that are mapped to a gene symbol
+  mapped_probes <- mappedkeys(x)
+  # Convert to a list
+  xx <- as.list(x[mapped_probes])
+  # Convert list to annotation vector
+  anno_vect <- sapply(xx,function(x){x})
+  return(anno_vect)
+}
+
+# geneannot_func annotates gene symbol to DE result table
+geneannot_func <- function(tb, anno_vect) {
+  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
+  if (exists("anno_lib")) {
+    if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)}
+  }
+  tb$ID=as.character(tb$ID)
+  tb$SYMBOL=sapply(as.character(tb$ID), function(x){if (x%in%names(anno_vect)){anno_vect[x]} else {"NA"}})
+  tb$SYMBOL[which(tb$SYMBOL=="")]="NA"
+  # remove probes with NA in logFC column
+  tb <- tb[!is.na(tb$logFC),]
+  tb[order(tb$P.Value),]
+}
+```
+
 ```{r anno_utility, eval=T, echo=F, warning=F, message=F}
 # install corresponding annotation database if it is not installed
 anno_array=annotation(rma.data.of.interest)
 cat("The platform used is", anno_array, "\n")
-if (!anno_array%in%names(anno_list)) stop(paste0("The annotation database for array ", anno_array, " (", platform, " platform ) is not installed. Please find the annotation dabase in Bioconductor AnnotationData Packages\n"))
-anno_lib=anno_list[[anno_array]] # use the annotation database
-cat("The corresponding R annotation database package is", anno_lib,"\n")
-# check if the annotation database is installed
-if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
-library(anno_lib, character.only=T)
-
-geneannot_func <- function(tb) {
-  anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
-  remove.pm <- function(x) {gsub("_PM", "", x)} # Assign official gene symbol using hgu133plus2.db package if anntoation is based on pd.hg.u133.plus.2. Note that the probe names have additional "PM"s in the results will be removed to match the names in the gene symbol package.
-  if (anno_lib=="hgu133plus2.db") {tb$ID=sapply(as.character(tb$ID), remove.pm)} 
-  tb$ID=as.character(tb$ID)
-  tb$SYMBOL=sapply(as.character(tb$ID), function(x) mget(x, env=get(anno_symbol), ifnotfound=NA)[[1]])
-  tb[order(tb$P.Value),]
+if (!anno_array%in%names(anno_list)) {
+  cat("Annotate using GPL annotation in GEO\n")
+  anno_vect=glpanno_func(GPL_ID=anno_array)
+} else {
+  anno_lib=anno_list[[anno_array]] # use the annotation database
+  cat("The corresponding R annotation database package is", anno_lib,"\n")
+  anno_vect <- ranno_func(anno_lib=anno_lib)
 }
 ```
 
@@ -540,7 +648,7 @@ contrast_fn=paste0(resdir,"/", contrast_name, ".csv")
 ```
 
 ```{r anno_tb, eval=T, echo=F, warning=F, message=F}
-contrast_table <- geneannot_func(tb=contrast_table)
+contrast_table <- geneannot_func(tb=contrast_table, anno_vect=anno_vect)
 write.csv(contrast_table, file=contrast_fn, row.names = FALSE)
 ```
 
@@ -782,6 +890,7 @@ pca_func <- function(oligo.data, pc) {
   for (i in idx_exist) {
     group_var=group_vars[i]
     legend=legends[i]
+    pData(oligo.data)[,group_var]=as.factor(as.character(pData(oligo.data)[,group_var])) # convert to factor
     nlevel=nlevels(pData(oligo.data)[,group_var]) # levels of the variable
     if (group_var=="ScanDate_Group"|(nlevel>=2&nlevel<=10)) {
       if (group_var=="Status") {
