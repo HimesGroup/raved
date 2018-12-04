@@ -1,5 +1,5 @@
 ---
-title: 'RAVED: Differential Expression Analysis for Gene Expression Microarry Data -- GSE4917 dex_24hr vs baseline_24hr'
+title: 'RAVED: Differential Expression Analysis for Gene Expression Microarry Data -- GSE4917 dex_24hr vs control_24hr'
 author: 'Mengyuan Kan (mengykan@upenn.edu)'
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -38,13 +38,13 @@ resdir="results"
 # tissue
 tissue="MCF10A-Myc"
 # reference condition
-con0="baseline_24hr"
+con0="control_24hr"
 # altered condition
 con1="dex_24hr"
 # treatment. Assign "comparison" if this column is used for DE.
 treatment=c(con0,con1)
 # disease. Assign "comparison" if this column is used for DE.
-disease="healthy"
+disease="nonasthma"
 ```
 
 Manually change these variables according to dataset:
@@ -76,7 +76,8 @@ Install the prerequisite R packages if they do not exist
 * limma
 * sva
 * annotate
-* Bioconductor AnnotationData Packages: hgu133plus2.db, hgug4112a.db, hugene10sttranscriptcluster.db
+* DT
+* corresponding Bioconductor annotationData Packages
 * viridis (heatmap color)
 * ggplot2
 * gplots (heatmap2 plot)
@@ -93,6 +94,7 @@ biocLite("limma")
 biocLite("sva")
 biocLite("annotate")
 biocLite("viridis")
+install.packages("DT")
 install.packages("ggplot2")
 install.packages("gplots")
 install.packages("devtools")
@@ -107,6 +109,7 @@ library(oligo)
 library(limma)
 library(sva)
 library(annotate)
+library(DT)
 library(viridis)
 library(ggplot2)
 library(gplots)
@@ -464,7 +467,7 @@ svamod_func <- function(paired=FALSE) {
   tb.nullmod <- as.data.frame(nullBatch)
   names(tb.nullmod) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
 
-  donoradj=NULL # assign variable is donor is adjusted
+  donoradj=FALSE # assign variable is donor is adjusted
   tb.nullmod1=NULL # assign null matrix for donor adjustment
   if ((paired)&(batchadj)) { # same donor treatment adjust for donor
     # Test if donor and scandate are correlated
@@ -497,7 +500,7 @@ batcherror_func <- function() {
   } else if (nbatch==1) {
     batcherror="one"
   } else {
-    if (batchadj) {batcherror="no"} else {batcherror="correlate"}
+    if (batchadj) { if (donoradj) {batcherror="no"} else {batcherror="correlate_donor_scandate"}} else {batcherror="correlate"}
   }
   return(batcherror)
 }
@@ -511,7 +514,7 @@ batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table, 
     qValuesBatch=p.adjust(pValuesBatch, method="BH") # get q-values
     tb.sva <- data.frame(ID=names(pValuesBatch),pValuesBatch,qValuesBatch)
     contrast_table <- merge(contrast_table, tb.sva, by="ID", all=TRUE)
-  } else if (batcherror=="correlate") {
+  } else if (batcherror=="correlate"|batcherror=="correlate_donor_scandate") {
     contrast_table$pValuesBatch=contrast_table$qValuesBatch=rep(NA,nrow(contrast_table))
   } else {
     contrast_table$pValuesBatch=contrast_table$P.Value
@@ -521,28 +524,27 @@ batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table, 
 }
 ```
 
-Check whether to adjust for scan date and donor.
+Check whether to adjust for scan date and donor. Create a full model that includes all variables and a null model that only includes the batch variable. Note that as SVA computes the matrix x in t(batch model)%*%x=batch model, batch effect can be adjusted only when the solve function works.
+
+**The batch used for adjustment:**
 
 ```{r sva_check, eval=T, echo=F}
 nbatch=nbatch_func()
-if (nbatch>1) {res_svamod=svamod_func(paired=paired);batchadj=res_svamod$batchadj}
+if (nbatch>1) {res_svamod=svamod_func(paired=paired);batchadj=res_svamod$batchadj;donoradj=res_svamod$donoradj}
 batcherror=batcherror_func()
+cat("batcherror =", batcherror)
 if (batcherror=="zero") {cat("No scan date is present in the data.")} else if (batcherror=="one") {cat("Only one batch is present in the data.")} else if (batcherror=="correlate") {cat("The scan date and the comparison status are highly confounded (See the model matrix). Cannot ajust for batch effect.")}
 ```
 
-Create a full model that includes all variables and a null model that only includes the batch variable. Note that as SVA computes the matrix x in t(batch model)%*%x=batch model, batch effect can be adjusted only when the solve function works.
-
 ```{r sva_mod, eval=T, echo=F, results="asis"}
-if (nbatch>1) {
-  if (paired) {
-    if (is.null(res_svamod$donoradj)) {
-      cat("Scan date and donor are highly confounded. See the matrix below.\n")
-      pandoc.table(res_svamod$tb.nullmod_donor, split.tables=Inf, caption="Null model matrix with scan date and donor")
-      cat("Only adjust for scan date.\n")
-    } else {cat("Both scan date and donor are adjusted.\n")}
+if (paired) {
+  if (batcherror=="correlate_donor_scandate") {
+    cat("Scan date and donor are highly confounded. See the matrix below.\n")
+    pandoc.table(res_svamod$tb.nullmod_donor, split.tables=Inf, caption="Null model matrix with scan date and donor")
+  } else if (batcherror=="no") {cat("Both scan date and donor are adjusted.\n")
+    pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
+    pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
   }
-  pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
-  pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
 }
 ```
 
@@ -554,7 +556,6 @@ contrast_table=batchadj_func(batcherror=batcherror, contrast_table=contrast_tabl
 pandoc.table(summary(contrast_table), split.tables=Inf, caption=paste0(con1, " vs. ", con0, " summary"))
 ```
 
-
 ### Assign Official Gene Symbol
 
 Annotate official gene symbol to probes. Install the [R annotation database package](https://bioconductor.org/packages/3.7/data/annotation/) corresponding to your gene expression data. For any newly installed annotation databases, it can be added to the list anno_list reserved for future use.
@@ -563,7 +564,7 @@ Annotate official gene symbol to probes. Install the [R annotation database pack
 anno_list=list()
 # Affymetrix
 anno_list[["pd.hg.focus"]]="hgfocus.db"
-anno_list[["pd.hg.u133a"]]="hgu133plus2.db"
+anno_list[["pd.hg.u133a"]]="hgu133a.db"
 anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
 anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
@@ -685,7 +686,7 @@ volplot_func <- function(df,qval_column,title) {
     signum = paste0(length(diffgenes), " significant genes based on ", qval_column)
     if (missing(title)) {title=signum}
     print(
-    ggplot(df, aes(x = logFC, y = logqval, color=sig)) + geom_point() +
+    ggplot(df, aes(x = logFC, y = logqval, color=sig)) + geom_point(size=0.5) +
       theme_bw() +
       labs(title=title,x="logFC",y=paste0("-log10(",qval_column,")")) +
       scale_color_manual(values=color) +
@@ -721,9 +722,9 @@ for (pval in c("P.Value","pValuesBatch")) {histplot_func(res, pval)}
 for (qval in c("adj.P.Val","qValuesBatch")) {histplot_func(res, qval)}
 ```
 
-### Top 20 Differentially Expression Results
+### Top 50 Differentially Expression Results
 
-```{r top20_utility, eval=T, echo=F}
+```{r top50_utility, eval=T, echo=F}
 # The datreform_func function reformats the DE table
 datreform_func <- function(dt,topnum=200) {
   dt=dt[order(dt$P.Value),]
@@ -736,12 +737,13 @@ datreform_func <- function(dt,topnum=200) {
 }
 ```
 
-Show top 20 probes sorted by un-adjusted p-values
+Show top 50 probes sorted by un-adjusted p-values
 
-```{r top20, eval=T, echo=F, results="asis"}
+```{r top50, eval=T, echo=F, message=F, warning=F, results="asis"}
 res <- datreform_func(dt=res)
 rownames(res) <- NULL
-pandoc.table(res[1:20,],split.tables=Inf)
+#pandoc.table(res[1:20,],split.tables=Inf)
+DT::datatable(res[1:50,],rownames=FALSE, options = list(columnDefs = list(list(className = 'dt-center', targets = "_all"))))
 ```
 
 ### Boxplots for Top 6 Differentially Expressed Genes
@@ -774,7 +776,7 @@ topgene_boxplot_func <- function(tb,colour,comp) { # comp: comparison status
 }
 ```
 
-```{r boxplot, eval=T, echo=F, message=F, warning=F, fig.height=4, fig.width=4.5}
+```{r boxplot, eval=T, echo=F, message=F, warning=F, fig.height=4, fig.width=4}
 topgene_boxplot_func(tb=res[1:6,])
 ```
 
