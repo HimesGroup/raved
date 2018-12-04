@@ -514,11 +514,8 @@ batchadj_func <- function(batcherror=batcherror, contrast_table=contrast_table, 
     qValuesBatch=p.adjust(pValuesBatch, method="BH") # get q-values
     tb.sva <- data.frame(ID=names(pValuesBatch),pValuesBatch,qValuesBatch)
     contrast_table <- merge(contrast_table, tb.sva, by="ID", all=TRUE)
-  } else if (batcherror=="correlate"|batcherror=="correlate_donor_scandate") {
+  } else { # batcherror=correlate, correlate_donor_scandate, one, zero
     contrast_table$pValuesBatch=contrast_table$qValuesBatch=rep(NA,nrow(contrast_table))
-  } else {
-    contrast_table$pValuesBatch=contrast_table$P.Value
-    contrast_table$qValuesBatch=contrast_table$adj.P.Val
   }
   return(contrast_table)
 }
@@ -667,7 +664,7 @@ res=read.csv(contrast_fn)
 volplot_func <- function(df,qval_column,title) {
   # get qvalue column
   qval <- df[,qval_column]
-  if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else {          
+  if (!all(is.na(qval))) {          
     df <- df[!is.na(qval),] # remove NA values
     qval <- df[,qval_column]
     if (min(df[,qval_column])>=0.05) {
@@ -711,7 +708,7 @@ histplot_func <- function(df,qval_column,title) {
   if (missing(title)) {title=""}
   # get qvalue column
   qval <- df[,qval_column]
-  if (all(is.na(qval))) {message("The batch and status are highly confounded. Batch effect is not adjusted.")} else{hist(qval,main=title,xlab=qval_column)}
+  if (!all(is.na(qval))) {hist(qval,main=title,xlab=qval_column)}
 }
 ```
 
