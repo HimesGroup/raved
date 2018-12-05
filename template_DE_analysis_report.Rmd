@@ -223,7 +223,7 @@ If the same donors underwent treated and untreated condition, gene expression pa
 if (length(disease)==2) {
   paired=FALSE
 } else if (length(disease)==1) {
-  if (all((pheno.sub$Donor)==1)) {paired=FALSE} # if treatment is in different donors
+  if (all(table(pheno.sub$Donor)==1)) {paired=FALSE} # if treatment is in different donors
   else {paired=TRUE} # if treatment is in samd donors
 }
 ```
@@ -233,7 +233,7 @@ cat("paired =",as.character(paired))
 ```
 
 Exclude samples missing the other paired donors in treatment comparisons
-```{r pheno_paired, eval=T, echo=F, results="asis"}
+```{r pheno_paired, eval=T, echo=F}
 if (paired) {
   pheno.of.interest <- phenopair_func(pheno.of.interest)
 }
