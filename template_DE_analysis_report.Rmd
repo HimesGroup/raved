@@ -597,7 +597,10 @@ symbol_list[["GPL17077"]]="GENE_SYMBOL"
 # glpanno_func creates anntoation vector based on GPL annotation from GEO
 glpanno_func <- function(GPL_ID){
   gpl <- Table(getGEO(GPL_ID, destdir = "data"))
-  if (GPL_ID%in%names(symbol_list)) {anno_vect <- gpl[,symbol_col]} else {anno_vect <- gpl[,"gene name"]}
+  if (GPL_ID%in%names(symbol_list)) {
+    symbol_col <- symbol_list[[GPL_ID]]
+    anno_vect <- gpl[,symbol_col]
+  } else {anno_vect <- gpl[,"gene name"]}
   names(anno_vect) <- gpl[,"ID"]
   return(anno_vect)
 }
@@ -640,6 +643,7 @@ cat("The platform used is", anno_array, "\n")
 if (!anno_array%in%names(anno_list)) {
   cat("Annotate using GPL annotation in GEO\n")
   anno_vect=glpanno_func(GPL_ID=anno_array)
+  anno_lib="NA"
 } else {
   anno_lib=anno_list[[anno_array]] # use the annotation database
   cat("The corresponding R annotation database package is", anno_lib,"\n")
