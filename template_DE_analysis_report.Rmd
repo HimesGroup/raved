@@ -232,7 +232,7 @@ if (length(disease)==2) {
 cat("paired =",as.character(paired))
 ```
 
-Exclude samples missing the other paired donors in treatment comparisons
+Exclude samples missing the other paired donors in treatment comparisons if paired analysis is applied
 ```{r pheno_paired, eval=T, echo=F}
 if (paired) {
   pheno.of.interest <- phenopair_func(pheno.of.interest)
@@ -500,8 +500,11 @@ batcherror_func <- function() {
   } else if (nbatch==1) {
     batcherror="one"
   } else {
-    if (batchadj) { if (donoradj) {batcherror="no"} else {batcherror="correlate_donor_scandate"}} else {batcherror="correlate"}
-  }
+    if (batchadj) { # if scan date is not correlated with status
+      if (paired) {if (donoradj) {batcherror="no"} else {batcherror="correlate_donor_scandate"}}
+      else {batcherror="no"}}
+    else {batcherror="correlate"} # if scan date is correlated with status
+    }
   return(batcherror)
 }
 
@@ -542,6 +545,10 @@ if (paired) {
     pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
     pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
   }
+} else {
+  if (batcherror=="no") cat("Both scan date and donor are adjusted.\n")
+    pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
+    pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
 }
 ```
 
@@ -590,7 +597,10 @@ symbol_list[["GPL17077"]]="GENE_SYMBOL"
 # glpanno_func creates anntoation vector based on GPL annotation from GEO
 glpanno_func <- function(GPL_ID){
   gpl <- Table(getGEO(GPL_ID, destdir = "data"))
-  if (GPL_ID%in%names(symbol_list)) {anno_vect <- gpl[,symbol_col]} else {anno_vect <- gpl[,"gene name"]}
+  if (GPL_ID%in%names(symbol_list)) {
+    symbol_col <- symbol_list[[GPL_ID]]
+    anno_vect <- gpl[,symbol_col]
+  } else {anno_vect <- gpl[,"gene name"]}
   names(anno_vect) <- gpl[,"ID"]
   return(anno_vect)
 }
@@ -633,6 +643,7 @@ cat("The platform used is", anno_array, "\n")
 if (!anno_array%in%names(anno_list)) {
   cat("Annotate using GPL annotation in GEO\n")
   anno_vect=glpanno_func(GPL_ID=anno_array)
+  anno_lib="NA"
 } else {
   anno_lib=anno_list[[anno_array]] # use the annotation database
   cat("The corresponding R annotation database package is", anno_lib,"\n")
