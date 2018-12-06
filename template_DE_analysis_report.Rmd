@@ -591,6 +591,7 @@ If using GPL annotation from GEO, note that gene symbol annotation in different 
 symbol_list=list()
 # Agilent
 symbol_list[["GPL17077"]]="GENE_SYMBOL"
+symbol_list[["GPL4133"]]="GENE_SYMBOL"
 ```
 
 ```{r glpanno_func, echo=F}
