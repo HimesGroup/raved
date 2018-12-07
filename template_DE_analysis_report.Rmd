@@ -272,6 +272,20 @@ For data from Affymetrix platform, raw probe intensity data from supplementary f
 
 Generate raw.data object using supplementary files (for Affymetrix data).
 
+```{r primeview_pkg, eval=T, echo=F, message=F, warning=F, results="hide"}
+# check if the platform is Affymetrix primeview array.
+GPL_ID=sapply(getGEO(geo_id),annotation)
+```
+
+
+```{r primeview_check, eval=T, echo=F}
+if (geo_GPL=="") {if (length(GPL_ID)>2) {stop("More than one platforms exist. Define geo_GPL variable.")}} else {GPL_ID=geo_GPL}
+if (GPL_ID=="GPL15207") {
+  cat("Since platform GPL15207 Affymetrix PrimeView lacks corresponding annotation dataset, use the gse expression matrix instead.\n")
+  if (usesuppl) {stop("set usesuppl==TRUE ", "and inspect whether gse gene expression matrix is normalized.")}
+}
+```
+
 ```{r suppldata_readin, eval=T, echo=F, message=F, warning=F, results="hide"}
 # The suppdownload_func function downloads the supplimentary raw data files from GEO and unextract the zip file
 suppldownload_func <- function() {
@@ -591,6 +605,7 @@ If using GPL annotation from GEO, note that gene symbol annotation in different 
 symbol_list=list()
 # Agilent
 symbol_list[["GPL17077"]]="GENE_SYMBOL"
+symbol_list[["GPL15207"]]="Gene Symbol"
 symbol_list[["GPL4133"]]="GENE_SYMBOL"
 ```
 
@@ -600,6 +615,8 @@ glpanno_func <- function(GPL_ID){
   gpl <- Table(getGEO(GPL_ID, destdir = "data"))
   if (GPL_ID%in%names(symbol_list)) {
     symbol_col <- symbol_list[[GPL_ID]]
+    # set NA for gene symbols of the probes with more than one genes mapped
+    gpl[,symbol_col][which(grepl("///",gpl[,symbol_col]))] <- NA # GPL15207
     anno_vect <- gpl[,symbol_col]
   } else {anno_vect <- gpl[,"gene name"]}
   names(anno_vect) <- gpl[,"ID"]

@@ -148,6 +148,9 @@ for (x in names(pheno.raw)) {
 Automatically define the variable "suppldata" (i.e. TRUE or FALSE) showing whether supplementary data is available. Note that samples with supplementary file column equals "None" are excluded from analysis.
 
 ```{r suppldata_define, eval=T, echo=F}
+if (all(c("supplementary_file","supplementary_file.1")%in%names(pheno.raw))) {
+  if (all(grepl("cel|CEL",pheno.raw$supplementary_file.1))) {pheno.raw$supplementary_file=pheno.raw$supplementary_file.1}
+}
 # check if there is missing supplementary_file
 if (all(pheno.raw$supplementary_file=="NONE")) {
   suppldata=FALSE
@@ -160,6 +163,7 @@ if (all(pheno.raw$supplementary_file=="NONE")) {
   suppldata=TRUE
 } else {suppldata=TRUE}
 ```
+
 
 Defined suppldata variable
 
@@ -241,11 +245,20 @@ if (suppldata) {
 
 For data from Affymetrix platform, the raw.data object is generated from importing supplementary raw data files (usually .cel files) using R oligo package. Scan date information is derived from the raw.data for batch effect adjustment.
 
+```{r primeview_pkg, eval=T, echo=F, message=F, warning=F, results="hide"}
+# check if the platform is Affymetrix primeview array.
+GPL_ID=annotation(gse)
+if (GPL_ID=="GPL15207") { # install pd.primeview.hs.entrezg if it does not exist
+  if (!"pd.primeview.hs.entrezg"%in%installed.packages()[,1]) {install.packages("http://mbni.org/customcdf/22.0.0/entrezg.download/pd.primeview.hs.entrezg_22.0.0.tar.gz",repos = NULL)}
+}
+```
+
 ```{r rawdata_affy, eval=T, echo=F, message=F, warning=F, results="hide"}
 if (platform=="Affymetrix"&suppldata) {
   #1. Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
-  raw.data <- read.celfiles(raw.files)
+  if (GPL_ID=="GPL15207") {raw.data <- read.celfiles(raw.files,pkgname="pd.primeview.hs.entrezg")}
+  else {raw.data <- read.celfiles(raw.files)}
 
   #2. Obtain scan date information from the raw.data for batch effect adjustment
   # As the scan date and scan time are usually joined by "T" or a white space, use both pattern to split the date with time
@@ -334,7 +347,10 @@ exprs(raw.data)=apply(exprs(raw.data),2,function(x){replace(x,which(x<=0),NA)})
 
 
 ```{r check_norm, eval=T, echo=F, warning=F}
-if (!suppldata|platform!="Affymetrix") {
+if (!suppldata|platform!="Affymetrix"|GPL_ID=="GPL15207") {
+  if (GPL_ID=="GPL15207") {
+  cat("Since platform GPL15207 Affymetrix PrimeView lacks corresponding annotation dataset, use the gse expression matrix instead.")
+}
   boxplot(exprs(gse),col=colour_list,main="Probe Intensity matrix of raw data",xaxt="n") # note gse here are non-coverted expression values
   legend("topright",legend=names(colour_list),fill=colour_list,cex=0.8)
   if (!normdata) {
@@ -490,7 +506,7 @@ res_intensity$densplot
 ### RNA Digestion
 
 
-Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5' to the 3' end. It is expected that probe intensities are lower at the 5' end of a probe set when compared to the 3´end as RNA degradation starts from the 5' end of a molecule. RNA which is too degraded will shows a very high slope from 5' to 3'. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
+Overall RNA quality can be assessed by RNA degradation plots. In the gene expression array, each probe is represented by a probe set. Each probe set is 11-20 probes (pairs of oligos). This plot shows the average intensity of each probe across all probe sets, ordered from the 5' to the 3' end. It is expected that probe intensities are lower at the 5' end of a probe set when compared to the 3' end as RNA degradation starts from the 5' end of a molecule. RNA which is too degraded will shows a very high slope from 5' to 3'. Thus, the standardized slope of the RNA degradation plot serves as quantitative indicator of the RNA degradation. 
 
 This step requires R package affy that outputs the probes in each probe set matrix ordered from 5' to 3', while this function is not implemented in the oligo package.
 
@@ -618,7 +634,7 @@ PMMM_func <- function() {
 ```
 
 ```{r PMMM_plot, eval=T, echo=F}
-if (platform=="Affymetrix"&suppldata) {PMMM_func()}
+if (platform=="Affymetrix"&suppldata&GPL_ID!="GPL15207") {PMMM_func()}
 ```
 
 ### MA Plots
@@ -864,7 +880,7 @@ RLE_func <- function(Mss) {
 Compute the Kolmogorov-Smirnov statistic Ra between each array's (i.e. sample) values (i.e. relative log expression values) and the pooled, overall distribution of the values. Detect outliers that are deviated from the threshold.
 
 ```{r RLE_outlier, eval=T, echo=F, message=F, warning=F}
-if (platform=="Affymetrix"&suppldata) {
+if (platform=="Affymetrix"&suppldata&GPL_ID!="GPL15207") {
   fitPLM=fitPLM_func(raw.data)
   res_RLE=RLE_func(Mss=fitPLM$Mss_RLE)
   outlier_RLE=res_RLE$outlier
@@ -878,7 +894,7 @@ if (platform=="Affymetrix"&suppldata) {
 Use boxplot_func function to plot RLE. Outliers marked with * have values centered away from 0 and/or are more spread out are potentially problematic.
 
 ```{r RLE_plot, eval=T, echo=F, message=F, warning=F, fig.height=8, fig.width=6}
-if (platform=="Affymetrix"&suppldata) {res_RLE$plot}
+if (platform=="Affymetrix"&suppldata&GPL_ID!="GPL15207") {res_RLE$plot}
 ```
 
 ### Normalized Unscaled Standard Error (NUSE) Outlier Detection and Plots
@@ -910,7 +926,7 @@ NUSE_func <- function(Mss) {
 Compute 75% quantile Na of each array's NUSE values Detect outliers that have larger Na deviated from the threshold.
 
 ```{r NUSE_outlier, eval=T, echo=F, message=F, warning=F, results="asis"}
-if (platform=="Affymetrix"&suppldata) {
+if (platform=="Affymetrix"&suppldata&GPL_ID!="GPL15207") {
   res_NUSE <- NUSE_func(Mss=fitPLM$Mss_NUSE)
   outlier_NUSE = res_NUSE$outlier # compute upper 75% quantile statistics to detect outliers
   cat(length(outlier_NUSE), "outlier(s) are detected in NUSE metrics.\n")
@@ -923,7 +939,7 @@ if (platform=="Affymetrix"&suppldata) {
 Use boxplot_func function to plot RLE. Outliers marked with * have values centered away from 0 and/or are more spread out are potentially problematic.
 
 ```{r NUSE_plot, eval=T, echo=F, message=F, warning=F, fig.height=8, fig.width=6}
-if (platform=="Affymetrix"&suppldata) {res_NUSE$boxplot}
+if (platform=="Affymetrix"&suppldata&GPL_ID!="GPL15207") {res_NUSE$boxplot}
 ```
 
 ### Distance between Samples and Outlier Detection
@@ -1128,7 +1144,7 @@ tbQC_func <- function(outliers) { # define outliers
   } else {
     tb$QC_Pass[rownames(tb)%in%outliers]<-0
   }
-  tb$Filename <- rownames(tb) # add filename in a new column
+  if (GPL_ID=="GPL15207") {tb$Filename <- rownames(pData(gse))} else {tb$Filename <- rownames(tb)} # add filename in a new column
   # save in a new phenotype file
   write.table(tb,pheno_fn_withQC,col.names=T,row.names=F,sep="\t",quote=F)
   # defined outliers
@@ -1173,5 +1189,3 @@ pandoc.table(res_tbQC$tb_withQC, split.tables=Inf, caption="Summary of samples w
 ```{r sessioninfo, eval=T, echo=F}
 pander(sessionInfo())
 ```
-
-
