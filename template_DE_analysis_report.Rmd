@@ -125,15 +125,17 @@ library(pander)
 ```{r pheno_utility, eval=T, echo=F}
 # The phenosub_func function subsets phenotypes based on the user defined variables
 phenosub_func <- function(){
+  if (!all(tissue%in%pheno$Tissue)) {stop("Assigned tissue varialbes are not included in the Tissue column")}
+  if (!all(treatment%in%pheno$Treatment)) {stop("Assigned treatment variables are not included in the Treatment column")}
+  if  (!all(disease%in%pheno$Disease)) {stop("Assigned disease variables are not included in the Disease column")}
   pheno.sub=subset(pheno,(Tissue%in%tissue)&(Treatment%in%treatment)&(Disease%in%disease))
   pheno.sub=droplevels(pheno.sub)
   # assign comparison to "Status" column
-  if (length(treatment)==2) {
-    if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {
-      pheno.sub$Status=pheno.sub$Treatment} else {stop("Assigned treatment variables are not included in the Treatment column")}
-  } else if (length(disease)==2) {
-    if (identical(sort(levels(pheno.sub$Disease)),sort(c(con0,con1)))) {
-      pheno.sub$Status=pheno.sub$Disease} else {stop("Assigned treatment variables are not included in the Disease column")}
+  if (identical(sort(levels(pheno.sub$Treatment)),sort(c(con0,con1)))) {
+      pheno.sub$Status=pheno.sub$Treatment
+  }
+  if (identical(sort(levels(pheno.sub$Disease)),sort(c(con0,con1)))) {
+      pheno.sub$Status=pheno.sub$Disease
   }
   pheno.sub$Status <-factor(pheno.sub$Status,levels=c(con0,con1))
   return(pheno.sub)
@@ -170,12 +172,14 @@ infosumm_func <- function(pheno) {
   N_Condition0 <- sum(pheno$Status==con0) # count number of samples under condition 0
   N_Condition1 <- sum(pheno$Status==con1) # count number of samples under condition 1
   if (identical(sort(levels(pheno$Treatment)),sort(c(con0,con1)))) {
-    App="GC"
+    App="Treatment"
+    disease=paste(disease,collapse="_")
     if (geo_GPL=="") {name=paste(geo_id,tissue,disease,con1,"vs",con0, sep="_")} else {{name=paste(geo_id,geo_GPL,tissue,disease,con1,"vs",con0, sep="_")}}
     Disease=disease
     Treatment=con1
   } else {
-    App="Asthma"
+    App="Disease"
+    treatment=paste(treatment,collapse="_")
     if (geo_GPL=="") {name=paste(geo_id,tissue,treatment,con1,"vs",con0, sep="_")} else {name=paste(geo_id,geo_GPL,tissue,treatment,con1,"vs",con0, sep="_")}
     Disease=con1
     Treatment=treatment
@@ -220,10 +224,10 @@ Define paired variable.
 If the same donors underwent treated and untreated condition, gene expression pattens are likely influenced by the same donor. Therefore, in this case, we adjust for Donor in limma regression as well as in sva batch-effect adjustment where both scan date and donor will be used as a known covariate (if donor is not correlated with scan date). For treatments/medication received by different patient groups, donor will not be adjusted.
 
 ```{r paired, eval=T, echo=F, results="asis"}
-if (length(disease)==2) {
+if (identical(sort(levels(pheno.of.interest$Disease)),sort(c(con0,con1)))) { # status is disease
   paired=FALSE
-} else if (length(disease)==1) {
-  if (all(table(pheno.sub$Donor)==1)) {paired=FALSE} # if treatment is in different donors
+} else if (identical(sort(levels(pheno.of.interest$Treatment)),sort(c(con0,con1)))) {
+  if (all(table(pheno.of.interest$Donor)==1)) {paired=FALSE} # if treatment is in different donors
   else {paired=TRUE} # if treatment is in samd donors
 }
 ```
@@ -560,9 +564,11 @@ if (paired) {
     pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
   }
 } else {
-  if (batcherror=="no") cat("Both scan date and donor are adjusted.\n")
+  if (batcherror=="no") {
+    cat("Both scan date and donor are adjusted.\n")
     pandoc.table(res_svamod$tb.fullmod, split.tables=Inf, caption="Full model matrix")
     pandoc.table(res_svamod$tb.nullmod, split.tables=Inf, caption="Null model matrix")
+  }
 }
 ```
 
@@ -597,28 +603,30 @@ anno_list[["GPL6480"]]="hgug4112a.db"
 # Illumina
 anno_list[["GPL6947"]]="illuminaHumanv3.db"
 anno_list[["GPL10558"]]="illuminaHumanv4.db"
+anno_list[["GPL6101"]]="illuminaRatv1.db" # rat
 ```
 
 If using GPL annotation from GEO, note that gene symbol annotation in different GPL may have different column names.
 
 ```{r symbol_list, eval=T, echo=F}
 symbol_list=list()
+# Affymetrix
+symbol_list[["GPL15207"]]="Gene Symbol" # PrimeView
 # Agilent
-symbol_list[["GPL17077"]]="GENE_SYMBOL"
-symbol_list[["GPL15207"]]="Gene Symbol"
-symbol_list[["GPL4133"]]="GENE_SYMBOL"
+symbol_list[["GPL17077"]]="GENE_SYMBOL" # Agilent-039494 SurePrint G3 Human GE v2 8x60K Microarray 039381
+symbol_list[["GPL4133"]]="GENE_SYMBOL" # Agilent-014850 Whole Human Genome Microarray 4x44K G4112
 ```
 
 ```{r glpanno_func, echo=F}
 # glpanno_func creates anntoation vector based on GPL annotation from GEO
 glpanno_func <- function(GPL_ID){
-  gpl <- Table(getGEO(GPL_ID, destdir = "data"))
+  gpl <- Table(getGEO(GPL_ID, destdir=datadir))
   if (GPL_ID%in%names(symbol_list)) {
     symbol_col <- symbol_list[[GPL_ID]]
     # set NA for gene symbols of the probes with more than one genes mapped
     gpl[,symbol_col][which(grepl("///",gpl[,symbol_col]))] <- NA # GPL15207
     anno_vect <- gpl[,symbol_col]
-  } else {anno_vect <- gpl[,"gene name"]}
+  } else {stop("Find out gene symbol column name here: ","https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=",GPL_ID," \nDefine it in symbol_list.")}
   names(anno_vect) <- gpl[,"ID"]
   return(anno_vect)
 }
