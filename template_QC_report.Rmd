@@ -1033,7 +1033,7 @@ PCA demonstrates information of the expression dataset in a reduced number of di
 
 ```{r pca_utility, eval=T, echo=F}
 # The pcastat_func function computes principal components
-pcastat_func <- function() {
+pcastat_func <- function(raw.data) {
   # obtain original expression data
   if (!normdata) {
     raw.data.pca <- na.omit(log2(exprs(raw.data)))
@@ -1060,12 +1060,13 @@ pcastat_func <- function() {
 
 # The pcaplot_func creates plots for pc1 and pc2
 pcaplot_func <- function(pc, group_var,legend) { # group_var: column name for a specific group; legend: legend name
+  group=pData(raw.data)[which(row.names(pData(raw.data))%in%row.names(pc)),group_var]
   df <- data.frame(
     PC1=pc$PC1,
     PC2=pc$PC2,
-    group=pData(raw.data)[,group_var]
+    group=group
   )
-  i=length(levels(pData(raw.data)[,group_var]))
+  i=length(levels(group))
   group_col <- colours[1:i]
   names(group_col) <- levels(pData(raw.data)[,group_var]) # colour to corresponding group for plot
   ggplot(df,aes(PC1,PC2,color=group)) + geom_point() +
@@ -1095,7 +1096,7 @@ pca_func <- function(pc) {
 1. Compute PCs and variance explained by the first 10 PCs
 
 ```{r pca_tb, eval=T, echo=F, message=F, warning=F, results="asis"}
-res_pca <- pcastat_func()
+res_pca <- pcastat_func(raw.data=raw.data)
 pandoc.table(res_pca$tb,split.tables=Inf, caption="Variance explained")
 ```
 
@@ -1182,6 +1183,17 @@ if (length(outlier)>0) {cat("They are: ", outlier)}
 ```{r qcsumm2, eval=T, echo=F, results="asis"}
 pandoc.table(res_tbQC$tb_withoutQC, split.tables=Inf, caption="Summary of samples without QC")
 pandoc.table(res_tbQC$tb_withQC, split.tables=Inf, caption="Summary of samples with QC")
+```
+
+
+Generate PCA plots if the outliers are detected and removed
+
+```{r pca_plot_rm, eval=T, echo=F}
+if (length(outlier)>0) {
+  res_pca_rm <- pcastat_func(raw.data=raw.data[,!sampleNames(raw.data)%in%outlier])
+  plot_list=pca_func(pc=res_pca_rm$pc)
+  for (i in plot_list) {print(i)}
+}
 ```
 
 #### Session information
