@@ -162,7 +162,7 @@ phenopair_func <- function(dat) {
 # The tbsum_func function generates summary of variables of interest
 tbsum_func <- function(tb) {
   vars=c("Status", "ScanDate_Group") # variables of interest
-  tb=as.data.frame(table(tb[,names(tb)%in%vars]))
+  tb=as.data.frame(table(droplevels(tb[,names(tb)%in%vars])))
   names(tb)[ncol(tb)]="Counts"
   return(tb)
 }
