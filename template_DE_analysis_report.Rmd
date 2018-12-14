@@ -274,22 +274,6 @@ if ("ScanDate_Group"%in%names(pheno)) {
 
 For data from Affymetrix platform, raw probe intensity data from supplementary files (usually .cel files) in GEO are downloaded and used for DE analysis. For data from Agilent platform, the intensity data is derived from GEO expression matrix.
 
-Generate raw.data object using supplementary files (for Affymetrix data).
-
-```{r primeview_pkg, eval=T, echo=F, message=F, warning=F, results="hide"}
-# check if the platform is Affymetrix primeview array.
-GPL_ID=sapply(getGEO(geo_id),annotation)
-```
-
-
-```{r primeview_check, eval=T, echo=F}
-if (geo_GPL=="") {if (length(GPL_ID)>2) {stop("More than one platforms exist. Define geo_GPL variable.")}} else {GPL_ID=geo_GPL}
-if (GPL_ID=="GPL15207") {
-  cat("Since platform GPL15207 Affymetrix PrimeView lacks corresponding annotation dataset, use the gse expression matrix instead.\n")
-  if (usesuppl) {stop("set usesuppl==TRUE ", "and inspect whether gse gene expression matrix is normalized.")}
-}
-```
-
 ```{r suppldata_readin, eval=T, echo=F, message=F, warning=F, results="hide"}
 # The suppdownload_func function downloads the supplimentary raw data files from GEO and unextract the zip file
 suppldownload_func <- function() {
@@ -328,10 +312,20 @@ if (usesuppl) {
 
   # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
-  raw.data <- read.celfiles(raw.files)
+  tryerror=try(raw.data <- read.celfiles(raw.files), silent = T)
 }
 ```
 
+
+```{r readcel_errorcheck, eval=T, echo=F, message=F, warning=F}
+if (usesuppl) {
+  if (class(tryerror)=="try-error") {
+    if (grepl("pd.primeview",tryerror)) { # if Affymetrix PrimeView is used
+      stop("NOTE: This platform is Affymetrix PrimeView which lacks corresponding annotation dataset, use the GEO expression matrix instead of raw intensity data.\n Set usesuppl=FALSE, and check QC to set normdata\n")
+      } else {stop(tryerror[1])}
+  }
+}
+```
 
 Generate raw.data object using expression matrix from GEO (for platforms other than Affymetrix).
 
@@ -589,6 +583,7 @@ anno_list=list()
 # Affymetrix
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133a.db"
+anno_list[["pd.hg.u95av2"]]="hgu95av2.db"
 anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
 anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
 anno_list[["GPL96"]]="hgu133plus2.db"
@@ -668,7 +663,15 @@ anno_array=annotation(rma.data.of.interest)
 cat("The platform used is", anno_array, "\n")
 if (!anno_array%in%names(anno_list)) {
   cat("Annotate using GPL annotation in GEO\n")
-  anno_vect=glpanno_func(GPL_ID=anno_array)
+  # if annotation package is not GPL annotation
+  if (!grepl('GPL',anno_array)) {
+    if (geo_GPL==""){
+      GPL_ID=annotation(getGEO(geo_id,destdir=datadir)[[1]])
+    } else {
+      GPL_ID=geo_GPL
+    }
+  }
+  anno_vect=glpanno_func(GPL_ID=GPL_ID)
   anno_lib="NA"
 } else {
   anno_lib=anno_list[[anno_array]] # use the annotation database
