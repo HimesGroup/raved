@@ -250,6 +250,10 @@ For data from Affymetrix platform, the raw.data object is generated from importi
 GPL_ID=annotation(gse)
 if (GPL_ID=="GPL15207") { # install pd.primeview.hs.entrezg if it does not exist
   if (!"pd.primeview.hs.entrezg"%in%installed.packages()[,1]) {install.packages("http://mbni.org/customcdf/22.0.0/entrezg.download/pd.primeview.hs.entrezg_22.0.0.tar.gz",repos = NULL)}
+  cat("This platform is GPL15207 Affymetrix PrimeView.\n")
+  cat("Since it lacks corresponding annotation dataset, for differential expression (DE) analysis, use GEO expression matrix instead of raw intensity data.\n")
+  cat("set 'usesuppl=FALSE' and inspect whether gene expression matrix is normalized for 'normdata' setting\n")
+  cat("Still use raw intensity data for QC\n")
 }
 ```
 
@@ -307,12 +311,12 @@ Show the summary of phenotype variables and the sample size for different groups
 pandoc.table(head(pheno,5), split.tables=Inf,caption="Show the first 5 rows of the modified phenotype file")
 # show the groups of interest
 avail_group=c("Tissue","Disease","Treatment")[c("Tissue","Disease","Treatment")%in%names(pheno)]
-res=droplevels(as.data.frame(table(pheno[,avail_group])))
+res=as.data.frame(table(pheno[,avail_group]))
 names(res) <- c(avail_group,"Count")
-pandoc.table(res, split.tables=Inf, caption="Sample size in different tissue and disease/treatment groups")
+pandoc.table(res[which(res$Count>0),], split.tables=Inf, caption="Sample size in different tissue and disease/treatment groups")
 # show samples in different batch
 if ("ScanDate_Group"%in%names(pheno)) {
-  res=as.data.frame(table(pheno[,"ScanDate_Group"]))
+  res=as.data.frame(table(droplevels(pheno[,"ScanDate_Group"])))
   names(res) <- c("ScanDate_Group","Count")
   pandoc.table(res, split.tables=Inf, caption="Sample size in different batch")
 } else {cat("No scan date information.")}
@@ -1158,7 +1162,7 @@ tbQC_func <- function(outliers) { # define outliers
   # after QC
   tb_withQC=as.data.frame(table(tb[which(tb$QC==1),names(tb)%in%vars]))
   names(tb_withQC)[ncol(tb_withQC)]="Counts"
-  return(list(outlier=outlier, tb_withoutQC=tb_withoutQC, tb_withQC=tb_withQC))
+  return(list(outlier=outlier, tb_withoutQC=tb_withoutQC[which(tb_withoutQC$Count>0),], tb_withQC=tb_withQC[which(tb_withQC$Count>0),]))
 }
 ```
 
