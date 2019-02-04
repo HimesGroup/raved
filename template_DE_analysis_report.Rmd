@@ -69,6 +69,11 @@ if (geo_GPL=="") {pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} el
 cat(paste0("pheno_fn = '", pheno_fn,"'"))
 ```
 
+```{r check_var, eval=T, echo=F}
+varerror <- grepl("-",c(con0, con1))
+if (any(varerror)) {stop("Condition variables shoud not have sepcial character '-': ", paste0(c(con0, con1)[varerror]))}
+```
+
 Install the prerequisite R packages if they do not exist
 
 * GEOquery 
@@ -88,6 +93,7 @@ Install the prerequisite R packages if they do not exist
 ```{r pkg, eval=F, echo=F}
 source("http://bioconductor.org/biocLite.R")
 biocLite("GEOquery")
+biocLite("ArrayExpress")
 biocLite("preprocessCore")
 biocLite("oligo")
 biocLite("limma")
@@ -104,7 +110,10 @@ install.packages("pander")
 Load the necessary libraries
 
 ```{r lib, eval=T, echo=F, message=F, warning=F}
-library(GEOquery)
+if (grepl("^GSE", geo_id)) {
+  library(GEOquery); geo=TRUE; arrayexpr=FALSE} else if (grepl("^E-", geo_id)) {
+  library(ArrayExpress); geo=FALSE; arrayexpr=TRUE
+}
 library(oligo)
 library(limma)
 library(sva)
@@ -329,8 +338,9 @@ if (usesuppl) {
 
 Generate raw.data object using expression matrix from GEO (for platforms other than Affymetrix).
 
-```{r geomatrix_readin, eval=T, echo=F, message=F, warning=F}
-if (!usesuppl) {
+```{r geomatrix_readin_geo, eval=geo, echo=F, message=F, warning=F}
+# Use GEO data
+if ((!usesuppl)&geo) {
   # check if GEO matrix file exists
   geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
   if (length(geo_fn)==0) { # # GEO matrix file is not downloaded
@@ -356,6 +366,16 @@ if (!usesuppl) {
 }
 ```
 
+
+```{r arrayexpr_readin, eval=arrayexpr, echo=F, message=F, warning=F}
+if ((!usesuppl)&arrayexpr) {
+  if (!file.exists(paste0(datadir,"/",geo_id,"/data"))) {dir.create(paste0(datadir,"/",geo_id,"/data"), recursive = T)}
+  gse <- ArrayExpress(geo_id, path=paste0(datadir,"/",geo_id,"/data"), save=T)
+  # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
+  raw.data=gse
+}
+```
+
 Obtain raw.data.of.interest by subsetting raw.data based on the phenotype of interest
 
 ```{r sub_rawdata, eval=T, echo=F}
@@ -363,6 +383,8 @@ Obtain raw.data.of.interest by subsetting raw.data based on the phenotype of int
 subdat_func <- function(raw.data, pheno) {
   # subset raw.data based on the phenotype of interest
   raw.data=raw.data[,colnames(raw.data)%in%pheno$Filename]
+  # order phenotype file based on sample order in raw data
+  pheno <- do.call(rbind,lapply(colnames(raw.data),function(x)pheno[which(pheno$Filename==x),]))
   # assign phenotype data to raw expression data
   pData(raw.data) <- pheno
   row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
