@@ -55,11 +55,13 @@ Install the prerequisite R packages if they do not exist
 ```{r pkg, eval=F, echo=F, message=F, warning=F}
 source("http://bioconductor.org/biocLite.R")
 biocLite("GEOquery")
+biocLite("ArrayExpress")
 biocLite("oligo")
 biocLite("affy")
 biocLite("viridis")
 biocLite("preprocessCore")
 install.packages("ggplot2")
+install.packages("knitr")
 install.packages("gplots")
 install.packages("Hmisc")
 install.packages("devtools")
@@ -70,7 +72,11 @@ install.packages("pander")
 Load the necessary libraries. Load affy and dplyr packages later since they will mask other functions.
 
 ```{r lib, eval=T, echo=F, message=F, warning=F}
-library(GEOquery)
+if (grepl("^GSE", geo_id)) {
+  library(GEOquery); geo=TRUE; arrayexpr=FALSE} else if (grepl("^E-", geo_id)) {
+  library(ArrayExpress); geo=FALSE; arrayexpr=TRUE
+}
+library(knitr)
 library(oligo)
 library(viridis) # heatmap colour
 library(ggplot2)
@@ -81,35 +87,57 @@ library(preprocessCore) # quantile normalization
 library(pander)
 ```
 
-## GEO Data Download and Phenotype Preparation
+## GEO/ArrayExpress Data Download and Phenotype Preparation
 
-### GEO Dataset Download
+```{r, eval=geo, echo=F}
+knitr::asis_output("### GEO Dataset Download")
+```
 
-Download the GEO series matrix files if available. 
+```{r, eval=geo, echo=F}
+knitr::asis_output("Download GEO series matrix files if available.")
+```
 
-```{r geo_download, eval=T, echo=F, message=F, warning=F}
-# check if GEO matrix file exists
-geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
-if (length(geo_fn)==0) { # GEO matrix file is not downloaded
-  gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
-  if (length(gselms)>1) {  # multiple platform
-    gpls=sapply(gselms,annotation)
+```{r geo_download, eval=geo, echo=F, message=F, warning=F}
+# For GEO data
+if (geo) {
+  # check if GEO matrix file exists
+  geo_fn <- list.files(path=datadir)[grepl(geo_id,list.files(path=datadir))&grepl("matrix.txt.gz$",list.files(path=datadir))] # check if GEO matrix file exists
+  if (length(geo_fn)==0) { # GEO matrix file is not downloaded
+    gselms <- getGEO(geo_id, destdir=datadir, GSEMatrix = TRUE) # dowanload matrix file
+    if (length(gselms)>1) {  # multiple platform
+      gpls=sapply(gselms,annotation)
+      cat("This study was performed in multiple platforms:\n")
+      cat(unname(gpls),"\n")
+      cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
+      if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
+    } else {idx=1}
+    gse <- gselms[[idx]]
+  } else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
+    gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
+  } else { # GEO matrix file is alreadly downloaded and has multiple platforms
     cat("This study was performed in multiple platforms:\n")
-    cat(unname(gpls),"\n")
+    cat(geo_fn)
     cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
-    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); idx=which(grepl(geo_GPL,gpls))}
-  } else {idx=1}
-  gse <- gselms[[idx]]
-} else if (length(geo_fn)==1) { # GEO matrix file is alreadly downloaded and only has one platform
-  gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)
-} else { # GEO matrix file is alreadly downloaded and has multiple platforms
-  cat("This study was performed in multiple platforms:\n")
-  cat(geo_fn)
-  cat("Samples from same platform shoud be analyzed together. Assign a platform to the variable geo_GPL in the session coding.\n")
-  if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); geo_fn <- geo_fn[grep(geo_GPL,geo_fn)];gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)}
+    if (geo_GPL=="") {stop("This study has multiple platforms. Please assign the platform to the variable geo_GPL in the session coding.")} else {cat("Use platform", geo_GPL, "\n"); geo_fn <- geo_fn[grep(geo_GPL,geo_fn)];gse <- getGEO(filename=paste0(datadir,"/",geo_fn),GSEMatrix = TRUE)}
+  }
 }
 ```
 
+```{r, eval=arrayexpr, echo=F}
+knitr::asis_output("### ArrayExpress Dataset Download")
+```
+
+```{r, eval=arrayexpr, echo=F}
+knitr::asis_output("Download ArrayExpress dataset if available.")
+```
+
+```{r arrayexpr_download, eval=arrayexpr, echo=F, message=F, warning=F, message="hide"}
+# For ArrayExpress data
+if (arrayexpr) {
+  if (!file.exists(paste0(datadir,"/",geo_id,"/data"))) {dir.create(paste0(datadir,"/",geo_id,"/data"), recursive = T)}
+  gse <- ArrayExpress(geo_id, path=paste0(datadir,"/",geo_id,"/data"), save=T)
+}
+```
 
 Show expression dataset features
 ```{r gse, eval=T, echo=F}
@@ -147,23 +175,37 @@ for (x in names(pheno.raw)) {
 
 Automatically define the variable "suppldata" (i.e. TRUE or FALSE) showing whether supplementary data is available. Note that samples with supplementary file column equals "None" are excluded from analysis.
 
-```{r suppldata_define, eval=T, echo=F}
-if (all(c("supplementary_file","supplementary_file.1")%in%names(pheno.raw))) {
-  if (all(grepl("cel|CEL",pheno.raw$supplementary_file.1))) {pheno.raw$supplementary_file=pheno.raw$supplementary_file.1}
+```{r suppldata_define_geo, eval=T, echo=F}
+# For GEO data
+if (geo) {
+  if (all(c("supplementary_file","supplementary_file.1")%in%names(pheno.raw))) {
+    if (all(grepl("cel|CEL",pheno.raw$supplementary_file.1))) {pheno.raw$supplementary_file=pheno.raw$supplementary_file.1}
+  }
+  # check if there is missing supplementary_file
+  if (all(pheno.raw$supplementary_file=="NONE")) {
+    suppldata=FALSE
+  } else if (any(pheno.raw$supplementary_file=="NONE")) {
+    sample_nosuppl=as.character(pheno.raw$geo_accession[pheno.raw$supplementary_file=="NONE"])
+    pheno.raw=pheno.raw[which(pheno.raw$supplementary_file!="NONE"),]
+    cat("Not all samples have defined supplementary file path:\n")
+    cat(paste(sample_nosuppl,collapse=", "),"\n")
+    cat("These samples are excluded from analysis\n")
+    suppldata=TRUE
+  } else {suppldata=TRUE}
 }
-# check if there is missing supplementary_file
-if (all(pheno.raw$supplementary_file=="NONE")) {
-  suppldata=FALSE
-} else if (any(pheno.raw$supplementary_file=="NONE")) {
-  sample_nosuppl=as.character(pheno.raw$geo_accession[pheno.raw$supplementary_file=="NONE"])
-  pheno.raw=pheno.raw[which(pheno.raw$supplementary_file!="NONE"),]
-  cat("Not all samples have defined supplementary file path:\n")
-  cat(paste(sample_nosuppl,collapse=", "),"\n")
-  cat("These samples are excluded from analysis\n")
-  suppldata=TRUE
-} else {suppldata=TRUE}
 ```
 
+```{r suppldata_define_arrayexpr, eval=arrayexpr, echo=F}
+# For ArrayExpress data
+if (arrayexpr) {
+  # check if there is missing supplementary_file
+  if (all(table(pheno.raw$Array.Data.File)==1)) {
+    suppldata=TRUE
+  } else {suppldata=FALSE}
+  # create a pseudo geo_accession for ArrayExpress
+  pheno.raw$geo_accession=pheno.raw$Array.Data.File
+}
+```
 
 Defined suppldata variable
 
@@ -214,7 +256,10 @@ suppldownload_func <- function() {
 # If supplementary data is available, download supplimentary raw data files
 if (suppldata) {
   # The sampall_func function obtains the supplementary filenames of all samples of interest
-  sampall_func <- function() {basename(as.character(pheno.raw$supplementary_file))}
+  sampall_func <- function() {
+    if (geo) {basename(as.character(pheno.raw$supplementary_file))}
+    else if (arrayexpr) {{basename(as.character(pheno.raw$Array.Data.File))}}
+  }
 
   # The existall_func function check whether all supplementary files in GEO phenotype exist in the data directory
   existall_func <- function() {
@@ -227,7 +272,7 @@ if (suppldata) {
   rawall_func <- function() {
     raw_fn=list.files(path=paste0(datadir,"/",geo_id,"/data"))
     # obtain supplementary data with path
-    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())])
+    paste0(datadir,"/",geo_id,"/data/",raw_fn[which(raw_fn%in%sampall_func())]) # only select cel files from datadir
   }
 
   # Download raw data files (e.g. .cel) if available.
@@ -243,7 +288,7 @@ if (suppldata) {
 ```
 
 
-For data from Affymetrix platform, the raw.data object is generated from importing supplementary raw data files (usually .cel files) using R oligo package. Scan date information is derived from the raw.data for batch effect adjustment.
+For data from Affymetrix platform, the raw.data object is generated from importing supplementary raw data files (usually .cel files) using R oligo package.
 
 ```{r primeview_pkg, eval=T, echo=F, message=F, warning=F, results="hide"}
 # check if the platform is Affymetrix primeview array.
@@ -259,43 +304,26 @@ if (GPL_ID=="GPL15207") { # install pd.primeview.hs.entrezg if it does not exist
 
 ```{r rawdata_affy, eval=T, echo=F, message=F, warning=F, results="hide"}
 if (platform=="Affymetrix"&suppldata) {
-  #1. Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
+  # Read in the raw data and generate an object "raw.data" under the ExpressionFeatureSet (oligo class).
   raw.files=rawall_func()
   if (GPL_ID=="GPL15207") {raw.data <- read.celfiles(raw.files,pkgname="pd.primeview.hs.entrezg")}
   else {raw.data <- read.celfiles(raw.files)}
-
-  #2. Obtain scan date information from the raw.data for batch effect adjustment
-  # As the scan date and scan time are usually joined by "T" or a white space, use both pattern to split the date with time
-  pheno$ScanDate_Group <- sapply(strsplit(as.character(protocolData(raw.data)$dates), "T| "), function(x) {x[[1]]})
-  pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
 }
 ```
 
-For data from Agilent platform, the raw.data object is derived from GEO expression matrix. Scan date information is derived from the raw data files (usually in the 3rd line of a .txt file) for batch effect adjustment.
+For data from other platforms or without raw data files (supplementary data), the raw.data object is derived from GEO expression matrix.
 
 ```{r rawdata_agil, eval=T, echo=F}
-if (platform=="Agilent"&suppldata) {
-  dates <- sapply(rawall_func(),function(x){
-    lines=read.table(x,nrows=3,header=F,sep="\t")
-    date=lines[3,which(lines[2,]=="Scan_Date")] # grep Scan_Date index in 2nd line, and obtain scan date from 3rd line
-  })
-  pheno$ScanDate_Group <- sapply(strsplit(as.character(dates), "T| "), function(x) {x[[1]]}) # split "06-16-2011 11:08:06" and use the first part
-  pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
+if (!(platform=="Affymetrix"&suppldata)) {
   raw.data=gse
 }
 ```
 
-
-If supplementary data is not available, the raw.data object is derived from GEO expression matrix. Scan date information is unknown.
-
-```{r rawdata_unavail, eval=T, echo=F}
-if (!suppldata) {raw.data=gse}
-```
-
-Assign phenotype data to raw data object.
+Assign phenotype data from gse object to raw data object.
 
 ```{r pData_assign, eval=T, echo=F}
 # assign phenotype data to raw expression data
+if (suppldata) {pheno <- pheno[order(pheno$GEO_ID),]} # if using supplementary data, order pheno object by GEO_ID, because the files are loaded by this order
 pData(raw.data) <- pheno
 row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
 # Check if the sample names derived from expression data match those in phenotype file
@@ -304,11 +332,30 @@ matching <- mapply(grepl, x=rowname, pattern=as.character(pData(raw.data)$GEO_ID
 if (FALSE %in% matching) {stop("The sample names derived from expression data do not match those in phenotype file. Please check!")}
 ```
 
+Retrieve scan date information from raw.data object for batch effect adjustment. For Affymetrix data, scan date information is imported by oligo with raw data files. For Agilent platform, scan date information is derived from the raw data files (usually in the 3rd line of a .txt file) for batch effect adjustment.
+
+```{r scandate, eval=T, echo=F, message=F, warning=F, results="hide"}
+if (platform=="Affymetrix"&suppldata) {
+  # As the scan date and scan time are usually joined by "T" or a white space, use both pattern to split the date with time
+  pheno$ScanDate_Group <- sapply(strsplit(as.character(protocolData(raw.data)$dates), "T| "), function(x) {x[[1]]})
+  pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
+} else if (platform=="Agilent"&suppldata) {
+  dates <- sapply(rawall_func(),function(x){
+    lines=read.table(x,nrows=3,header=F,sep="\t")
+    date=lines[3,which(lines[2,]=="Scan_Date")] # grep Scan_Date index in 2nd line, and obtain scan date from 3rd line
+  })
+  pheno$ScanDate_Group <- sapply(strsplit(as.character(dates), "T| "), function(x) {x[[1]]}) # split "06-16-2011 11:08:06" and use the first part
+  pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
+}
+pData(raw.data) <- pheno # update pData
+row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
+```
+
 Show the summary of phenotype variables and the sample size for different groups
 
 ```{r pheno_check_raw, eval=T, warning=F,results="asis",echo=F}
 # show the first five rows
-pandoc.table(head(pheno,5), split.tables=Inf,caption="Show the first 5 rows of the modified phenotype file")
+pandoc.table(head(pData(raw.data),5), split.tables=Inf,caption="Show the first 5 rows of the modified phenotype file")
 # show the groups of interest
 avail_group=c("Tissue","Disease","Treatment")[c("Tissue","Disease","Treatment")%in%names(pheno)]
 res=as.data.frame(table(pheno[,avail_group]))
@@ -1184,9 +1231,13 @@ cat(length(outlier), "outlier(s) are defined.\n")
 if (length(outlier)>0) {cat("They are: ", outlier)}
 ```
 
-```{r qcsumm2, eval=T, echo=F, results="asis"}
+```{r qcsumm2, eval=T, echo=F, results="hide"}
 pandoc.table(res_tbQC$tb_withoutQC, split.tables=Inf, caption="Summary of samples without QC")
-pandoc.table(res_tbQC$tb_withQC, split.tables=Inf, caption="Summary of samples with QC")
+if (length(outlier)==0) {
+  cat("All samples passed QC\n")
+} else {
+  pandoc.table(res_tbQC$tb_withQC, split.tables=Inf, caption="Summary of samples with QC")
+}
 ```
 
 
