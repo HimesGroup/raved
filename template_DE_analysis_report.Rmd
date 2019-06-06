@@ -36,11 +36,11 @@ datadir="data"
 # directory stores generated files
 resdir="results"
 # tissue
-tissue="MCF10A-Myc"
+tissue="MCF10A-Myc" # naming is rigid, should be same as the Tissue defined in QC
 # reference condition
-con0="control_24hr"
+con0="control_24hr" # naming is rigid, should be same as the Treatment defined in QC
 # altered condition
-con1="dex_24hr"
+con1="dex_24hr" # naming is rigid, should be same as the Treatment defined in QC
 # treatment. Assign "comparison" if this column is used for DE.
 treatment=c(con0,con1)
 # disease. Assign "comparison" if this column is used for DE.
@@ -516,7 +516,7 @@ svamod_func <- function(paired=FALSE) {
       
     # check if scandate correlated with donor
     if (class(try(solve(t(modBatch1)%*%modBatch1),silent=T))=="matrix") {
-      donoradj="yes"
+      donoradj=TRUE
       modBatch=modBatch1
       nullBatch=nullBatch1
       tb.fullmod=tb.fullmod1
