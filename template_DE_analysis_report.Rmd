@@ -632,7 +632,6 @@ symbol_list[["GPL15207"]]="Gene Symbol" # PrimeView
 # Agilent
 symbol_list[["GPL17077"]]="GENE_SYMBOL" # Agilent-039494 SurePrint G3 Human GE v2 8x60K Microarray 039381
 symbol_list[["GPL4133"]]="GENE_SYMBOL" # Agilent-014850 Whole Human Genome Microarray 4x44K G4112
-symbol_list[["GPL6101"]]="ILMN_Gene"
 symbol_list[["GPL19462"]]="ID" #The official version of this platform is accession number GPL6885. This version includes ILMN_SYMBOL values in the ID column.
 symbol_list[["GPL1355"]]="Gene Symbol"
 ```
