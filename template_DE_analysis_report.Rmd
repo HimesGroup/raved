@@ -471,7 +471,7 @@ Fit a linear model to RMA log-intensity values, fit this model to a contrast mat
 ```{r limma, eval=T, echo=F, message=F, warning=F, results="asis"}
 res_DE=limma_func(paired=paired)
 fit2=res_DE$fit2
-pandoc.table(data.frame(Sample=rma.data.of.interest$Sample,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
+pandoc.table(data.frame(Sample=rma.data.of.interest$GEO_ID,res_DE$design), split.tables=Inf, caption="A design model matrix for linear model")
 pandoc.table(as.data.frame(res_DE$data.contrast), caption="A contract matrix for comparison")
 contrast_table <- topTable(fit2, adjust="BH",num=Inf) # get full set of results for each hypothesis test
 col.sel=c("logFC","AveExpr","t","P.Value","adj.P.Val","B") # select the columns of DE results
