@@ -338,15 +338,14 @@ Retrieve scan date information from raw.data object for batch effect adjustment.
 if (platform=="Affymetrix"&suppldata) {
   # As the scan date and scan time are usually joined by "T" or a white space, use both pattern to split the date with time
   pheno$ScanDate_Group <- sapply(strsplit(as.character(protocolData(raw.data)$dates), "T| "), function(x) {x[[1]]})
-  pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
 } else if (platform=="Agilent"&suppldata) {
   dates <- sapply(rawall_func(),function(x){
     lines=read.table(x,nrows=3,header=F,sep="\t")
     date=lines[3,which(lines[2,]=="Scan_Date")] # grep Scan_Date index in 2nd line, and obtain scan date from 3rd line
   })
   pheno$ScanDate_Group <- sapply(strsplit(as.character(dates), "T| "), function(x) {x[[1]]}) # split "06-16-2011 11:08:06" and use the first part
-  pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
 }
+pheno$ScanDate_Group <- as.factor(pheno$ScanDate_Group)
 pData(raw.data) <- pheno # update pData
 row.names(pData(raw.data)) <- sampleNames(protocolData(raw.data))
 ```
