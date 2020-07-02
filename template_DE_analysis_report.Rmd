@@ -1,6 +1,6 @@
 ---
 title: 'RAVED: Differential Expression Analysis for Gene Expression Microarry Data -- GSE4917 dex_24hr vs control_24hr'
-author: 'Mengyuan Kan (mengykan@upenn.edu)'
+author: 'Mengyuan Kan (mengykan@pennmedicine.upenn.edu)'
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   html_document:
@@ -605,17 +605,20 @@ anno_list=list()
 # Affymetrix
 anno_list[["pd.hg.focus"]]="hgfocus.db"
 anno_list[["pd.hg.u133a"]]="hgu133a.db"
-anno_list[["pd.hg.u95av2"]]="hgu95av2.db"
-anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
-anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
-anno_list[["GPL96"]]="hgu133plus2.db"
-anno_list[["GPL571"]]="hgu133a2.db"
 anno_list[["pd.hg.u133a.2"]]="hgu133a2.db"
+anno_list[["GPL571"]]="hgu133a2.db"
 anno_list[["pd.hg.u133.plus.2"]]="hgu133plus2.db"
+anno_list[["pd.ht.hg.u133.plus.pm"]]= "hgu133plus2.db"
+anno_list[["GPL96"]]="hgu133plus2.db"
+anno_list[["pd.hg.u95av2"]]="hgu95av2.db"
+anno_list[["GPL8300"]]="hgu95av2.db"
+anno_list[["pd.hta.2.0"]]="hta20transcriptcluster.db"
 anno_list[["pd.hugene.1.0.st.v1"]]="hugene10sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st.v1"]]="hugene20sttranscriptcluster.db"
 anno_list[["pd.hugene.2.0.st"]]="hugene21sttranscriptcluster.db"
-anno_list[["GPL8300"]]="hgu95av2.db"
+anno_list[["pd.huex.1.0.st.v2"]]= "huex10sttranscriptcluster.db"
+anno_list[["GPL80"]] = "hu6800.db"
+
 # Agilent
 anno_list[["GPL6480"]]="hgug4112a.db"
 # Illumina
