@@ -641,7 +641,7 @@ affy_exclude = c('hta.2.0', 'pd.hugene.2.0.st')
 
 ```{r RNAdeg_plot, eval=T, echo=F, message=F, warning=F}
 if (platform=="Affymetrix"&suppldata) {
-  if (any(sapply(affy_exclude, function(y){grepl(y, affy_exclude)}))) {cat("The affy package is not designed for this array type.\n")} else {RNAdeg_func()}
+  if (any(sapply(affy_exclude, function(y){grepl(y, annotation(raw.data))}))) {cat("The affy package is not designed for this array type.\n")} else {RNAdeg_func()}
 }
 ```
 
@@ -884,7 +884,7 @@ Outlier detection is applied by computing a sum of the absolute values of low fr
 
 ```{r spatial_outlier, eval=T, echo=F, message=F, warning=F}
 if (platform=="Affymetrix"&suppldata) {
-    if (any(sapply(affy_exclude, function(y){grepl(y, affy_exclude)}))) {cat("The affy package is not designed for this array type.\n")} else {
+    if (any(sapply(affy_exclude, function(y){grepl(y, annotation(raw.data))}))) {cat("The affy package is not designed for this array type.\n")} else {
     res_spatial=spatial_func()
     outlier_spatial=res_spatial$outlier
     cat(length(outlier_spatial), "outlier(s) are detected in the spatial metrics.\n")
@@ -899,7 +899,7 @@ Spatial distribution plots of samples with the 4 highest and lowest values of Fa
 
 ```{r spatial_plot, eval=T, echo=F, fig.height=10, fig.width=7}
 if (platform=="Affymetrix"&suppldata) {
-    if (any(sapply(affy_exclude, function(y){grepl(y, affy_exclude)}))) {cat("The affy package is not designed for this array type.\n")} else {
+    if (any(sapply(affy_exclude, function(y){grepl(y, annotation(raw.data))}))) {cat("The affy package is not designed for this array type.\n")} else {
     res_spatial$plot
   }
 }
