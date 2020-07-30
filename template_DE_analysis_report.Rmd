@@ -74,6 +74,10 @@ varerror <- grepl("-",c(con0, con1))
 if (any(varerror)) {stop("Condition variables shoud not have sepcial character '-': ", paste0(c(con0, con1)[varerror]))}
 ```
 
+```{r check_version, eval=T, echo=F}
+rversion <- as.numeric(paste0(R.Version()$major, ".", gsub("(\\d)\\..*", "\\1", R.Version()$minor)))
+```
+
 Install the prerequisite R packages if they do not exist
 
 * GEOquery 
@@ -89,22 +93,31 @@ Install the prerequisite R packages if they do not exist
 * devtools (compute pca)
 * pander
 
+```{r pkginstall_func, eval=T, echo=F}
+pkginstall_func <- function(pkgs, rversion, Bioconductor=FALSE) {
+  if (Bioconductor) {
+    if (rversion<3.6) {
+      source("http://bioconductor.org/biocLite.R")
+      sapply(biocLite, pkgs)
+    } else {
+      sapply(pkgs, BiocManager::install)
+    }
+  } else {sapply(pkgs, install.packages)}
+}
+```
 
-```{r pkg, eval=F, echo=F}
-source("http://bioconductor.org/biocLite.R")
-biocLite("GEOquery")
-biocLite("ArrayExpress")
-biocLite("preprocessCore")
-biocLite("oligo")
-biocLite("limma")
-biocLite("sva")
-biocLite("annotate")
-biocLite("viridis")
-install.packages("DT")
-install.packages("ggplot2")
-install.packages("gplots")
-install.packages("devtools")
-install.packages("pander")
+
+```{r pkg, eval=T, echo=F, message=F, warning=F, results="hide"}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+all.pkgs <- installed.packages()[,"Package"]
+bioc.pkgs <- c("GEOquery", "ArrayExpress", "preprocessCore", "oligo", "limma", "sva", "annotate") # Bioconductor packages
+rcran.pkgs <- c("DT", "ggplot2", "gplots", "devtools", "pander")
+if (rversion<3.6) {bioc.pkgs <- c(bioc.pkgs, "viridis")} else {rcran.pkgs <- c(rcran.pkgs, "viridis")}
+miss.bioc.pkgs <- bioc.pkgs[!which(bioc.pkgs%in%all.pkgs)]
+miss.rcran.pkgs <- rcran.pkgs[!which(rcran.pkgs%in%all.pkgs)]
+if (length(miss.bioc.pkgs)>0) {pkginstall_func(pkgs=miss.bioc.pkgs, rversion = rversion, Bioconductor=T)}
+if (length(miss.rcran.pkgs)>0) {pkginstall_func(pkgs=miss.rcran.pkgs, rversion = rversion, Bioconductor=F)}
 ```
 
 Load the necessary libraries
@@ -214,7 +227,7 @@ Read in pre-prepared phenotype data
 ```{r pheno_readin, eval=T, echo=F}
 if (geo_GPL=="") {pheno_fn=paste0(resdir,"/",geo_id,"_Phenotype_withQC.txt")} else {pheno_fn=paste0(resdir,"/",geo_id,"_",geo_GPL,"_Phenotype_withQC.txt")}
 # read in the pre-prepared phenotype data
-if (!file.exists(pheno_fn)) {stop("The phenotype file does not exist. Please check!")} else {pheno <- read.table(pheno_fn, header=TRUE, sep="\t")}
+if (!file.exists(pheno_fn)) {stop("The phenotype file does not exist. Please check!")} else {pheno <- read.table(pheno_fn, header=TRUE, sep="\t", stringsAsFactors = T)}
 ```
 
 Subset phenotypes based on the comparison variables. Check variables (before and after QC if outliers are detected).
@@ -657,7 +670,7 @@ glpanno_func <- function(GPL_ID){
 # ranno_func creates anntoation vector based on R annotation database
 ranno_func <- function(anno_lib){
   # check if the annotation database is installed
-  if (!anno_lib%in%installed.packages()[,1]){source("http://bioconductor.org/biocLite.R"); biocLite(anno_lib)}
+  if (!anno_lib%in%all.pkgs){pkginstall_func(pkgs=anno_lib, rversion = rversion, Bioconductor=T)}
   library(anno_lib, character.only=T)
   anno_symbol=gsub(".db","SYMBOL",anno_lib) # The name of the R object mapping between probe id and gene symbol
   x=get(anno_symbol)
