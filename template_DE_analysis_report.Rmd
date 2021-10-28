@@ -506,7 +506,7 @@ svamod_func <- function(paired=FALSE) {
   # Create a null model only including batch variables
   nullBatch =  model.matrix(~factor(rma.data.of.interest$ScanDate_Group)) # null model (adjusted variables only)
   # Check if the scan date and comparison status are confounded
-  if (class(try(solve(t(modBatch)%*%modBatch),silent=T))=="matrix") {batchadj=TRUE} else {batchadj=FALSE; message("The scan date and comparison status are highly confounded")}
+  if ("matrix"%in%class(try(solve(t(modBatch)%*%modBatch),silent=T))) {batchadj=TRUE} else {batchadj=FALSE; message("The scan date and comparison status are highly confounded")}
   # summary of the full model
   tb.fullmod <- as.data.frame(modBatch)
   names(tb.fullmod) <- c("Intercept",levels(rma.data.of.interest$Status)[-1],levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1])
@@ -528,7 +528,7 @@ svamod_func <- function(paired=FALSE) {
     names(tb.nullmod1) <- c("Intercept",levels(droplevels(rma.data.of.interest$ScanDate_Group))[-1],levels(droplevels(rma.data.of.interest$Donor))[-1])
       
     # check if scandate correlated with donor
-    if (class(try(solve(t(modBatch1)%*%modBatch1),silent=T))=="matrix") {
+    if ("matrix"%in%class(try(solve(t(modBatch1)%*%modBatch1),silent=T))) {
       donoradj=TRUE
       modBatch=modBatch1
       nullBatch=nullBatch1
