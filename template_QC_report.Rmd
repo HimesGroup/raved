@@ -52,22 +52,37 @@ Install the prerequisite R packages if they do not exist
 * dplyr
 * pander
 
-```{r pkg, eval=F, echo=F, message=F, warning=F}
-source("http://bioconductor.org/biocLite.R")
-biocLite("GEOquery")
-biocLite("ArrayExpress")
-biocLite("oligo")
-biocLite("affy")
-biocLite("viridis")
-biocLite("preprocessCore")
-install.packages("ggplot2")
-install.packages("knitr")
-install.packages("gplots")
-install.packages("Hmisc")
-install.packages("devtools")
-install.packages("dplyr")
-install.packages("pander")
+```{r check_version, eval=T, echo=F}
+rversion <- as.numeric(paste0(R.Version()$major, ".", gsub("(\\d)\\..*", "\\1", R.Version()$minor)))
 ```
+
+```{r pkginstall_func, eval=T, echo=F}
+pkginstall_func <- function(pkgs, rversion, Bioconductor=FALSE) {
+  if (Bioconductor) {
+    if (rversion<3.6) {
+      source("http://bioconductor.org/biocLite.R")
+      sapply(biocLite, pkgs)
+    } else {
+      sapply(pkgs, BiocManager::install)
+    }
+  } else {sapply(pkgs, install.packages)}
+}
+```
+
+
+```{r pkg, eval=T, echo=F, message=F, warning=F, results="hide"}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+all.pkgs <- installed.packages()[,"Package"]
+bioc.pkgs <- c("GEOquery", "ArrayExpress", "preprocessCore", "oligo", "affy", "viridis", "preprocessCore") # Bioconductor packages
+rcran.pkgs <- c("knitr", "DT", "ggplot2", "gplots", "Hmisc", "devtools", "dplyr", "pander")
+if (rversion<3.6) {bioc.pkgs <- c(bioc.pkgs, "viridis")} else {rcran.pkgs <- c(rcran.pkgs, "viridis")}
+miss.bioc.pkgs <- bioc.pkgs[!which(bioc.pkgs%in%all.pkgs)]
+miss.rcran.pkgs <- rcran.pkgs[!which(rcran.pkgs%in%all.pkgs)]
+if (length(miss.bioc.pkgs)>0) {pkginstall_func(pkgs=miss.bioc.pkgs, rversion = rversion, Bioconductor=T)}
+if (length(miss.rcran.pkgs)>0) {pkginstall_func(pkgs=miss.rcran.pkgs, rversion = rversion, Bioconductor=F)}
+```
+
 
 Load the necessary libraries. Load affy and dplyr packages later since they will mask other functions.
 

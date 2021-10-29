@@ -1,7 +1,7 @@
 RAVED - Reproducible Analysis and Validation of Expression Data
 ======
 
-Authors: Mengyuan Kan, Maya Shumyatcher, Blanca Himes
+Authors: Mengyuan Kan, Avantika Diwadkar, Maya Shumyatcher, Blanca Himes
 
 ## Introduction
 
@@ -91,3 +91,8 @@ The RNA-Seq data analysis pipeline is available on GitHub [taffeta](https://gith
 `template_DE_analysis_report.Rmd`: R markdown codes for GSE4917 DE analysis
 
 `template_DE_analysis_report.html`: HTML report for GSE4917 DE analysis
+
+`c2.cp.kegg.v7.4.symbols.gmt`: KEGG pathway file. Place the file under specified data directory.
+
+`c2.cp.reactome.v7.4.symbols.gmt`: Reactome pathway file. Place the file under specified data directory.
+
