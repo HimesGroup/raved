@@ -93,6 +93,7 @@ Install the prerequisite R packages if they do not exist
 * devtools (compute pca)
 * pander
 * fgsea
+* biomaRt
 
 ```{r pkginstall_func, eval=T, echo=F}
 pkginstall_func <- function(pkgs, rversion, Bioconductor=FALSE) {
@@ -112,7 +113,7 @@ pkginstall_func <- function(pkgs, rversion, Bioconductor=FALSE) {
 if (!requireNamespace("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 all.pkgs <- installed.packages()[,"Package"]
-bioc.pkgs <- c("GEOquery", "ArrayExpress", "preprocessCore", "oligo", "limma", "sva", "annotate", "fgsea") # Bioconductor packages
+bioc.pkgs <- c("GEOquery", "ArrayExpress", "preprocessCore", "oligo", "limma", "sva", "annotate", "fgsea", "biomaRt") # Bioconductor packages
 rcran.pkgs <- c("DT", "ggplot2", "gplots", "devtools", "pander")
 if (rversion<3.6) {bioc.pkgs <- c(bioc.pkgs, "viridis")} else {rcran.pkgs <- c(rcran.pkgs, "viridis")}
 miss.bioc.pkgs <- bioc.pkgs[!which(bioc.pkgs%in%all.pkgs)]
@@ -140,6 +141,7 @@ library(devtools)
 library(preprocessCore)
 library(pander)
 library(fgsea)
+library(biomaRt)
 ```
 
 ## Obtain Phenotype and GEO Data
@@ -1023,6 +1025,33 @@ pathways.msigkegg <- gmtPathways(kegg_fn)
 pathways.msigreactome <- gmtPathways(reactome_fn)
 pathways.msigkeggreac <- c(pathways.msigkegg,pathways.msigreactome)
 ```
+
+```{r eval=T, echo=F, message=F, warning=F}
+if (geo_GPL==""){
+  GPL_ID=annotation(getGEO(geo_id,destdir=datadir)[[1]])
+} else {
+  GPL_ID=geo_GPL
+}
+gpl <- getGEO(GPL_ID, destdir="data")
+species=unique(Table(gpl)[,"Species Scientific Name"])
+
+convertspeciesGeneList <- function(x){
+  human 	<- useEnsembl("ensembl", dataset = "hsapiens_gene_ensembl", mirror = "useast")
+  species 	<- useEnsembl("ensembl", dataset = convert_dataset, mirror = "useast")
+  tmp 	<- getLDS(attributes = c("mgi_symbol"), filters = "mgi_symbol", values = x , mart = species, attributesL = c("hgnc_symbol"), martL = human, uniqueRows=TRUE)
+  return(tmp)
+}
+if (species!="Homo sapiens") {
+  if (species=="Mus musculus") {convert_dataset <- 'mmusculus_gene_ensembl'}
+  else if (species=="Rattus norvegicus") {convert_dataset <- 'rnorvegicus_gene_ensembl'}
+  else {stop("Please specify ensembl database for the corresponding species.")}
+  nonhuman_symbol <- convertspeciesGeneList(x=as.character(contrast_table$SYMBOL))
+  res_df <- merge(res_df, nonhuman_symbol, by.x="gene_symbol", by.y="MGI.symbol", all.x=T) %>%
+    dplyr::rename(nonhuman_symbol=SYMBOL, SYMBOL=HGNC.symbol) %>%
+    dplyr::arrange(adj.P.Val)
+}
+```
+
 
 Generate a vector of genes with z-statistics. Keep only one probe with the smallest p-value and the largest absolute log2 fold change if there are multiple probes mapped to the same gene.
 
